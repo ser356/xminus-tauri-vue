@@ -87,7 +87,6 @@ const goalId = ref('vocals');
 const choiceIndex = ref(0);
 const modelOverride = ref('');
 const showTestModels = ref(false);
-const manualCookie = ref('');
 const recoveryCode = ref('');
 const phase = ref<Phase>('pick');
 const job = ref<JobInfo | null>(null);
@@ -110,7 +109,7 @@ const availableModels = computed(() => (preset.value?.models ?? [])
 function isAllowed(m: ModelInfo | null | undefined): boolean {
   if (!m) return false;
   const s = session.value;
-  if (!s) return true;
+  if (!s || s.using_account) return true; // Con cuenta iniciada decide el servidor.
   return m.access_level === 0 || m.access_level === 3 || s.is_premium || s.is_tester
     || (m.access_level === 1 && !s.is_sng_country);
 }
@@ -135,7 +134,7 @@ const accountLabel = computed(() => {
   if (connecting.value) return 'Conectando…';
   if (!session.value) return 'Sin conexión';
   if (session.value.is_premium) return 'Cuenta Premium';
-  return session.value.using_account ? 'Tu cuenta' : 'Modo gratuito';
+  return session.value.using_account ? 'Cuenta conectada' : 'Modo gratuito';
 });
 const remainingText = computed(() => {
   const s = remaining.value;
@@ -155,7 +154,6 @@ async function connect(cookie?: string) {
   try {
     session.value = await invoke<SessionInfo>('initialize_session', { sessionCookie: cookie || null });
     needsLogin.value = false;
-    if (cookie) manualCookie.value = '';
   } catch (e) {
     const message = errorText(e);
     // Sin sesión válida el servicio manda a su página de login: se pide entrar.
@@ -442,7 +440,7 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
         </div>
 
         <p v-if="needsPremium" class="banner info">
-          Esta opción solo está disponible con una cuenta Premium de X-Minus. Elige otra opción o abre «Ajustes avanzados» para usar tu cuenta.
+          Esta opción es de pago. Si tienes cuenta Premium, pulsa «Iniciar sesión» arriba a la derecha.
         </p>
         <p v-else-if="model?.heavy" class="note">⏳ Esta opción da muy buen resultado pero tarda algo más.</p>
         <p v-else-if="model?.is_test" class="note">🧪 Opción experimental: puede que no funcione siempre.</p>
@@ -481,15 +479,6 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
               </option>
             </select>
             <label class="check"><input v-model="showTestModels" type="checkbox" /> Mostrar también modelos en pruebas</label>
-          </label>
-
-          <label class="field">
-            <span>Usar mi cuenta de X-Minus</span>
-            <div class="row">
-              <input v-model="manualCookie" type="password" autocomplete="off" placeholder="Pega aquí la cookie de tu navegador" />
-              <button class="ghost" :disabled="connecting || !manualCookie.trim()" @click="connect(manualCookie.trim())">Conectar</button>
-            </div>
-            <small class="muted">Solo hace falta si no se incluyó al compilar la app. No se guarda.</small>
           </label>
 
           <label class="field">

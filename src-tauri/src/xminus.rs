@@ -34,6 +34,8 @@ struct Context {
 struct Session {
     /// Origen de la página que dio el auth_key, p. ej. "https://uvronline.app".
     site: String,
+    /// Sesión iniciada con una cuenta (ventana de login o cookie).
+    logged_in: bool,
     auth_key: String,
     version: String,
     client_fp: String,
@@ -83,7 +85,8 @@ fn model_config(preset_id: &str, model_id: &str) -> Result<(String, String, Vec<
 
 fn access_allowed(session: &Session, level: u8) -> bool {
     // Misma regla `xa` del JS ai.v105. El servidor puede aplicar más restricciones.
-    level == 0 || level == 3 || session.is_premium || session.is_tester ||
+    // Con cuenta iniciada decide el servidor: la página no siempre expone is_premium.
+    session.logged_in || level == 0 || level == 3 || session.is_premium || session.is_tester ||
         (level == 1 && !session.is_sng_country)
 }
 
@@ -173,6 +176,7 @@ fn read_session(html: &str) -> Result<Session, String> {
     let show_setting_format = page_setting(html, "show_setting_format").unwrap_or_else(|| "0".into());
     Ok(Session {
         site: "https://x-minus.pro".into(),
+        logged_in: false,
         auth_key, version, client_fp, show_setting_format,
         is_premium: page_bool(html, "is_premium"),
         is_tester: page_bool(html, "is_tester"),
@@ -312,8 +316,10 @@ async fn page_state(win: &WebviewWindow) -> PageState {
         Ok(mut session) => {
             session.site = url.origin().ascii_serialization();
             // La cuenta vive en uvronline.app; x-minus.pro sin Premium es el modo gratuito.
-            if session.is_premium || !is_x_minus_host(&url) { PageState::LoggedIn(session) }
-            else { PageState::Anonymous(session) }
+            if session.is_premium || !is_x_minus_host(&url) {
+                session.logged_in = true;
+                PageState::LoggedIn(session)
+            } else { PageState::Anonymous(session) }
         }
         Err(_) => PageState::OtherPage(url),
     }
@@ -324,28 +330,40 @@ fn separator_page(url: &Url) -> Option<Url> {
         .filter(|ai| ai.path() != url.path())
 }
 
-/// Recarga la página del servicio en la ventana (oculta) y lee la sesión.
-async fn session_from_window(app: &AppHandle) -> Result<(Session, bool), String> {
-    let win = login_window(app, false)?;
-    if !win.is_visible().unwrap_or(false) {
-        // Recargar da un auth_key recién emitido.
-        let _ = win.navigate(Url::parse(PAGE).map_err(|e| e.to_string())?);
-        tokio::time::sleep(Duration::from_millis(900)).await;
-    }
+/// Carga `url` en la ventana y espera a saber qué sesión muestra.
+async fn load_and_read(win: &WebviewWindow, url: Url) -> PageState {
+    let _ = win.navigate(url);
+    tokio::time::sleep(Duration::from_millis(900)).await;
     for _ in 0..40 {
-        match page_state(&win).await {
-            PageState::LoggedIn(s) => return Ok((s, true)),
-            PageState::Anonymous(s) => return Ok((s, false)),
-            PageState::NeedsLogin => return Err(LOGIN_REQUIRED.into()),
-            PageState::OtherPage(url) => match separator_page(&url) {
-                Some(ai) => { let _ = win.navigate(ai); tokio::time::sleep(Duration::from_millis(900)).await; }
-                None => return Err(format!("El servicio ha cambiado y la app no lo reconoce ({}{}).",
-                    url.host_str().unwrap_or("?"), url.path())),
-            },
+        match page_state(win).await {
             PageState::Loading => tokio::time::sleep(Duration::from_millis(500)).await,
+            PageState::OtherPage(other) => match separator_page(&other) {
+                Some(ai) => { let _ = win.navigate(ai); tokio::time::sleep(Duration::from_millis(900)).await; }
+                None => return PageState::OtherPage(other),
+            },
+            done => return done,
         }
     }
-    Err("El servicio está tardando demasiado en responder. Inténtalo de nuevo.".into())
+    PageState::Loading
+}
+
+/// Lee la sesión de la ventana de login (oculta). La cuenta vive en uvronline.app;
+/// x-minus.pro sin sesión es el modo gratuito.
+async fn session_from_window(app: &AppHandle) -> Result<(Session, bool), String> {
+    let win = login_window(app, false)?;
+    let account = Url::parse("https://uvronline.app/ai").map_err(|e| e.to_string())?;
+    let public = Url::parse(PAGE).map_err(|e| e.to_string())?;
+    if let PageState::LoggedIn(s) = load_and_read(&win, account).await {
+        return Ok((s, true));
+    }
+    match load_and_read(&win, public).await {
+        PageState::LoggedIn(s) => Ok((s, true)),
+        PageState::Anonymous(s) => Ok((s, false)),
+        PageState::NeedsLogin => Err(LOGIN_REQUIRED.into()),
+        PageState::OtherPage(url) => Err(format!("El servicio ha cambiado y la app no lo reconoce ({}{}).",
+            url.host_str().unwrap_or("?"), url.path())),
+        PageState::Loading => Err("El servicio está tardando demasiado en responder. Inténtalo de nuevo.".into()),
+    }
 }
 
 /// Vigila en segundo plano la ventana de login y avisa a la interfaz en cuanto
@@ -529,7 +547,7 @@ pub async fn initialize_session(
         let http = state.http.clone();
         async move { fetch_session(&http, &jar).await }
     };
-    let (session, using_account, account_expired) = if let Some(cookie) = manual {
+    let (mut session, using_account, account_expired) = if let Some(cookie) = manual {
         (via_cookie(cookie).await?, true, false)
     } else {
         // Lo normal: la sesión iniciada en la ventana de login.
@@ -544,6 +562,7 @@ pub async fn initialize_session(
             },
         }
     };
+    session.logged_in = using_account;
     let info = SessionInfo {
         version: session.version.clone(),
         using_account,
