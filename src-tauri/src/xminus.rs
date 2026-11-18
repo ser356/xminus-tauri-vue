@@ -366,7 +366,8 @@ async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session,
                 .ok_or("El servicio redirigió sin indicar adónde.")?;
             let next = url.join(location).map_err(|_| "Redirección no válida".to_string())?;
             if !trusted_page_url(&next) {
-                return Err("El servicio redirigió a un sitio no permitido.".into());
+                return Err(format!("El servicio redirigió a un sitio no permitido ({}).",
+                    next.host_str().unwrap_or("desconocido")));
             }
             url = next;
             continue;
