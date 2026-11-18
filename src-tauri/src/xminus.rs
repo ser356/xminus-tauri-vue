@@ -32,6 +32,8 @@ struct Context {
 
 #[derive(Clone)]
 struct Session {
+    /// Origen de la página que dio el auth_key, p. ej. "https://uvronline.app".
+    site: String,
     auth_key: String,
     version: String,
     client_fp: String,
@@ -170,6 +172,7 @@ fn read_session(html: &str) -> Result<Session, String> {
     let client_fp = input_value(&page, "vocal-cut-fp").unwrap_or_else(|| "-".into());
     let show_setting_format = page_setting(html, "show_setting_format").unwrap_or_else(|| "0".into());
     Ok(Session {
+        site: "https://x-minus.pro".into(),
         auth_key, version, client_fp, show_setting_format,
         is_premium: page_bool(html, "is_premium"),
         is_tester: page_bool(html, "is_tester"),
@@ -184,10 +187,12 @@ fn page_bool(html: &str, key: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn request_headers() -> HeaderMap {
+fn request_headers(site: &str) -> HeaderMap {
     let mut h = HeaderMap::new();
-    h.insert(ORIGIN, HeaderValue::from_static("https://x-minus.pro"));
-    h.insert(REFERER, HeaderValue::from_static(PAGE));
+    let origin = HeaderValue::from_str(site).unwrap_or(HeaderValue::from_static("https://x-minus.pro"));
+    let referer = HeaderValue::from_str(&format!("{site}/ai")).unwrap_or(HeaderValue::from_static(PAGE));
+    h.insert(ORIGIN, origin);
+    h.insert(REFERER, referer);
     h.insert(ACCEPT, HeaderValue::from_static("application/json, text/plain, */*"));
     h
 }
@@ -255,10 +260,6 @@ struct Cookies {
 }
 
 impl Cookies {
-    fn is_empty(&self) -> bool {
-        self.extra.is_none() && self.by_domain.iter().all(|(_, h)| h.is_empty())
-    }
-
     fn header_for(&self, url: &Url) -> Option<String> {
         if !trusted_page_url(url) { return None; }
         let host = url.host_str().unwrap_or_default();
@@ -270,40 +271,88 @@ impl Cookies {
         }
         (!parts.is_empty()).then(|| parts.join("; "))
     }
+}
 
-    fn fingerprint(&self) -> String {
-        let mut v: Vec<String> = self.by_domain.iter().map(|(d, h)| format!("{d}:{h}")).collect();
-        v.sort();
-        v.join("|")
+/// Estado de la página cargada en la ventana de login.
+enum PageState {
+    Loading,
+    NeedsLogin,
+    Anonymous(Session),
+    LoggedIn(Session),
+    /// Página del servicio sin el separador (p. ej. la portada tras el login).
+    OtherPage(Url),
+}
+
+const SNAPSHOT_JS: &str = "JSON.stringify({url: location.href, ready: document.readyState === 'complete', html: document.documentElement ? document.documentElement.outerHTML : ''})";
+
+/// Lee URL y HTML de la ventana de login. La sesión ya está en esa ventana,
+/// así que no hace falta copiar cookies a otro cliente.
+async fn page_state(win: &WebviewWindow) -> PageState {
+    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+    let tx = std::sync::Mutex::new(Some(tx));
+    let sent = win.eval_with_callback(SNAPSHOT_JS, move |raw| {
+        if let Some(tx) = tx.lock().ok().and_then(|mut t| t.take()) { let _ = tx.send(raw); }
+    });
+    if sent.is_err() { return PageState::Loading; }
+    let Ok(Ok(raw)) = tokio::time::timeout(Duration::from_secs(5), rx).await else { return PageState::Loading };
+    let Ok(mut value) = serde_json::from_str::<Value>(&raw) else { return PageState::Loading };
+    if let Value::String(inner) = &value {
+        let Ok(parsed) = serde_json::from_str::<Value>(inner) else { return PageState::Loading };
+        value = parsed;
+    }
+    let Some(url) = value.get("url").and_then(Value::as_str).and_then(|u| Url::parse(u).ok()) else {
+        return PageState::Loading;
+    };
+    // Fuera del servicio (p. ej. en accounts.google.com): el usuario aún está entrando.
+    if !trusted_page_url(&url) { return PageState::Loading; }
+    if is_login_redirect(&url) { return PageState::NeedsLogin; }
+    if !value.get("ready").and_then(Value::as_bool).unwrap_or(false) { return PageState::Loading; }
+    let html = value.get("html").and_then(Value::as_str).unwrap_or_default();
+    match read_session(html) {
+        Ok(mut session) => {
+            session.site = url.origin().ascii_serialization();
+            // La cuenta vive en uvronline.app; x-minus.pro sin Premium es el modo gratuito.
+            if session.is_premium || !is_x_minus_host(&url) { PageState::LoggedIn(session) }
+            else { PageState::Anonymous(session) }
+        }
+        Err(_) => PageState::OtherPage(url),
     }
 }
 
-/// Lee las cookies de cada dominio del almacén de la ventana de login.
-fn collect_cookies(win: Option<&WebviewWindow>, extra: Option<String>) -> Cookies {
-    let by_domain = win.map(|w| COOKIE_DOMAINS.iter().map(|d| {
-        let header = Url::parse(&format!("https://{d}/")).ok()
-            .and_then(|u| w.cookies_for_url(u).ok())
-            .map(|cs| {
-                let mut v: Vec<String> = cs.iter().map(|c| format!("{}={}", c.name(), c.value())).collect();
-                v.sort();
-                v.join("; ")
-            })
-            .filter(|h| !h.contains(['\r', '\n']))
-            .unwrap_or_default();
-        (*d, header)
-    }).collect()).unwrap_or_default();
-    Cookies { by_domain, extra }
+fn separator_page(url: &Url) -> Option<Url> {
+    Url::parse(&format!("{}/ai", url.origin().ascii_serialization())).ok()
+        .filter(|ai| ai.path() != url.path())
 }
 
-/// Vigila en segundo plano la ventana de login. En cuanto la ventana está en una
-/// página del servicio (que no sea /login), comprueba de verdad si hay sesión;
-/// si la hay, cierra la ventana y avisa a la interfaz.
+/// Recarga la página del servicio en la ventana (oculta) y lee la sesión.
+async fn session_from_window(app: &AppHandle) -> Result<(Session, bool), String> {
+    let win = login_window(app, false)?;
+    if !win.is_visible().unwrap_or(false) {
+        // Recargar da un auth_key recién emitido.
+        let _ = win.navigate(Url::parse(PAGE).map_err(|e| e.to_string())?);
+        tokio::time::sleep(Duration::from_millis(900)).await;
+    }
+    for _ in 0..40 {
+        match page_state(&win).await {
+            PageState::LoggedIn(s) => return Ok((s, true)),
+            PageState::Anonymous(s) => return Ok((s, false)),
+            PageState::NeedsLogin => return Err(LOGIN_REQUIRED.into()),
+            PageState::OtherPage(url) => match separator_page(&url) {
+                Some(ai) => { let _ = win.navigate(ai); tokio::time::sleep(Duration::from_millis(900)).await; }
+                None => return Err(format!("El servicio ha cambiado y la app no lo reconoce ({}{}).",
+                    url.host_str().unwrap_or("?"), url.path())),
+            },
+            PageState::Loading => tokio::time::sleep(Duration::from_millis(500)).await,
+        }
+    }
+    Err("El servicio está tardando demasiado en responder. Inténtalo de nuevo.".into())
+}
+
+/// Vigila en segundo plano la ventana de login y avisa a la interfaz en cuanto
+/// la página muestra una sesión iniciada.
 fn watch_login(app: AppHandle) {
     let id = WATCH_ID.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
-        let http = app.state::<AppState>().http.clone();
-        let mut last = String::new();
-        let mut ticks_since_try = u32::MAX / 2;
         loop {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             if WATCH_ID.load(Ordering::SeqCst) != id { return; }
@@ -311,23 +360,22 @@ fn watch_login(app: AppHandle) {
                 let _ = app.emit("login-closed", ());
                 return;
             };
-            if !win.is_visible().unwrap_or(false) { return; }
-            let on_service = win.url().ok()
-                .map(|u| trusted_page_url(&u) && !u.path().starts_with("/login"))
-                .unwrap_or(false);
-            if !on_service { continue; }
-            let cookies = collect_cookies(Some(&win), None);
-            if cookies.is_empty() { continue; }
-            let key = cookies.fingerprint();
-            ticks_since_try = ticks_since_try.saturating_add(1);
-            // Reintenta si cambian las cookies o, si no, cada ~6 s.
-            if key == last && ticks_since_try < 4 { continue; }
-            last = key;
-            ticks_since_try = 0;
-            if fetch_session(&http, &cookies).await.is_ok() {
-                let _ = win.hide();
-                let _ = app.emit("login-detected", ());
+            if !win.is_visible().unwrap_or(false) {
+                let _ = app.emit("login-closed", ());
                 return;
+            }
+            match page_state(&win).await {
+                PageState::LoggedIn(_) => {
+                    if WATCH_ID.load(Ordering::SeqCst) != id { return; }
+                    let _ = win.hide();
+                    let _ = app.emit("login-detected", ());
+                    return;
+                }
+                // Tras entrar, la web puede dejarte en su portada: ir al separador.
+                PageState::OtherPage(url) if !is_x_minus_host(&url) => {
+                    if let Some(ai) = separator_page(&url) { let _ = win.navigate(ai); }
+                }
+                _ => {}
             }
         }
     });
@@ -371,18 +419,30 @@ pub async fn close_login(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Borra las cookies de x-minus.pro y uvronline del almacén de la app.
+fn is_service_cookie_domain(domain: &str) -> bool {
+    let d = domain.trim_start_matches('.').to_ascii_lowercase();
+    COOKIE_DOMAINS.iter().any(|x| d == *x || d.ends_with(&format!(".{x}")))
+}
+
+/// Cierra la sesión: borra cookies y almacenamiento de x-minus.pro y uvronline
+/// (la sesión de Google se mantiene, así volver a entrar es un clic).
 #[tauri::command]
-pub async fn logout(app: AppHandle) -> Result<(), String> {
+pub async fn logout(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    WATCH_ID.fetch_add(1, Ordering::SeqCst);
     let win = login_window(&app, false)?;
-    for d in COOKIE_DOMAINS {
-        let Ok(url) = Url::parse(&format!("https://{d}/")) else { continue };
-        if let Ok(cookies) = win.cookies_for_url(url) {
-            for c in cookies { let _ = win.delete_cookie(c); }
+    let _ = win.hide();
+    if win.url().map(|u| trusted_page_url(&u)).unwrap_or(false) {
+        let _ = win.eval("try{localStorage.clear();sessionStorage.clear();}catch(e){}");
+    }
+    let cookies = win.cookies().map_err(|_| "No se pudo cerrar la sesión".to_string())?;
+    for c in cookies {
+        if c.domain().is_some_and(is_service_cookie_domain) {
+            let _ = win.delete_cookie(c);
         }
     }
-    WATCH_ID.fetch_add(1, Ordering::SeqCst);
-    let _ = win.hide();
+    let mut ctx = state.current.lock().await;
+    ctx.session = None;
+    ctx.job = None;
     Ok(())
 }
 
@@ -464,12 +524,26 @@ pub async fn initialize_session(
     if manual.as_deref().is_some_and(|c| c.contains(['\r', '\n'])) {
         return Err("La cookie no es válida".into());
     }
-    let win = login_window(&app, false).ok();
-    let cookies = collect_cookies(win.as_ref(), manual.or_else(embedded_cookie));
-    let using_account = !cookies.is_empty();
-    // Sin sesión válida X-Minus redirige a /login: se devuelve LOGIN_REQUIRED.
-    let session = fetch_session(&state.http, &cookies).await?;
-    let account_expired = false;
+    let via_cookie = |cookie: String| {
+        let jar = Cookies { by_domain: Vec::new(), extra: Some(cookie) };
+        let http = state.http.clone();
+        async move { fetch_session(&http, &jar).await }
+    };
+    let (session, using_account, account_expired) = if let Some(cookie) = manual {
+        (via_cookie(cookie).await?, true, false)
+    } else {
+        // Lo normal: la sesión iniciada en la ventana de login.
+        match session_from_window(&app).await {
+            Ok((s, logged)) => (s, logged, false),
+            Err(e) => match embedded_cookie() {
+                Some(cookie) => match via_cookie(cookie).await {
+                    Ok(s) => (s, true, false),
+                    Err(_) => return Err(e),
+                },
+                None => return Err(e),
+            },
+        }
+    };
     let info = SessionInfo {
         version: session.version.clone(),
         using_account,
@@ -553,13 +627,13 @@ pub async fn start_separation(
         .text("pre_rate", "100")
         .text("bve_preproc", "auto")
         .text("show_setting_format", session.show_setting_format)
-        .text("hostname", "x-minus.pro")
+        .text("hostname", session.site.trim_start_matches("https://").to_owned())
         .text("client_fp", session.client_fp)
         .part("myfile", file_part);
 
     let json = body_as_json(state.http
         .post(format!("{API}/upload/vocalCutAi?catch-file"))
-        .headers(request_headers())
+        .headers(request_headers(&session.site))
         .multipart(multipart)
         .send().await.map_err(|_| "No se pudo subir la canción. Comprueba tu conexión.".to_string())?
     ).await?;
@@ -599,7 +673,7 @@ pub async fn check_status(state: State<'_, AppState>) -> Result<StatusInfo, Stri
         .text("locale", "es_ES");
     let json = body_as_json(state.http
         .post(format!("{API}/upload/vocalCutAi?check-job-status"))
-        .headers(request_headers())
+        .headers(request_headers(&session.site))
         .multipart(form)
         .send().await.map_err(|_| "Se perdió la conexión mientras se procesaba".to_string())?
     ).await?;
