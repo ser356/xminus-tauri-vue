@@ -11,6 +11,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-2022
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
@@ -21,6 +23,20 @@ jobs:
 
       - name: Preparar Rust para Windows x64
         run: rustup default stable-x86_64-pc-windows-msvc
+
+      - name: Validar la versión SemVer de la aplicación
+        id: version
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --locked --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cargo no pudo validar la versión' }
+          $version = ($metadata.packages | Where-Object name -eq 'xminus-tauri-vue').version
+          $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $npm = Get-Content package.json -Raw | ConvertFrom-Json
+          if (!$version -or $version -cne $tauri.version -or $version -cne $npm.version) {
+            throw 'Las versiones de Cargo, Tauri y npm deben coincidir'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Instalar dependencias
         run: npm ci
@@ -64,3 +80,46 @@ jobs:
           name: xminus-windows-x64
           path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
+
+  publish:
+    needs: windows
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: windows-release-${{ needs.windows.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: xminus-windows-x64
+          path: installer
+
+      - name: Publicar la versión verificada
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.windows.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          shopt -s nullglob
+          installers=(installer/*-setup.exe)
+          [[ ${#installers[@]} == 1 ]] || { echo 'Se esperaba exactamente un instalador'; exit 1; }
+
+          if existing=$(gh release view "$tag" --json isDraft --jq '.isDraft'); then
+            if [[ "$existing" == false ]]; then
+              echo "La release $tag ya está publicada."
+              exit 0
+            fi
+            echo "::error::Ya existe un borrador para $tag. Revisa su contenido antes de publicarlo."
+            exit 1
+          fi
+
+          args=(--target "$GITHUB_SHA" --title "X-Minus Stems $VERSION" --generate-notes)
+          if [[ "${VERSION%%+*}" == *-* ]]; then
+            args+=(--prerelease --latest=false)
+          fi
+          gh release create "$tag" "${installers[0]}" "${args[@]}"
