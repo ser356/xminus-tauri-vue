@@ -1,0 +1,19 @@
+node_modules/
+dist/
+target/
+src-tauri/target/
+.DS_Store
+.env
+.env.*
+*.har
+
+# Audio de prueba (no versionar canciones)
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.ogg
+
+# Cookie embebida en el binario (nunca al repositorio)
+src-tauri/secrets/*
+!src-tauri/secrets/README.md

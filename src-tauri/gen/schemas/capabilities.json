@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Acceso exclusivo al selector de archivos y a los comandos internos","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open"]}}

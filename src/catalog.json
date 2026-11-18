@@ -1,0 +1,1162 @@
+{
+  "capture_version": "ai.v105",
+  "modes": [
+    {
+      "id": "vocals_music",
+      "separation_type": "vocals_music",
+      "label": "Voz e instrumental",
+      "description": "Separa las voces y el acompañamiento",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer_inst_by_gabox_flowers_v10",
+          "name": "Mel-Roformer by Gabox flowers v10",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": "new_model"
+        },
+        {
+          "id": "mel_roformer_deux_becruily",
+          "name": "Mel-Roformer deux (becruily)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "best_duality_voc_inst"
+        },
+        {
+          "id": "bs_roformer_hyperace",
+          "name": "BS-Roformer HyperACE (unwa)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "less_muddy"
+        },
+        {
+          "id": "bs_roformer_resurrection_inst",
+          "name": "BS-Roformer Resurrection (unwa)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "fast"
+        },
+        {
+          "id": "mel_roformer_inst_by_gaboxfv7z",
+          "name": "Mel-RoFormer by Gabox Fv7z",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_gaboxfv7",
+          "name": "Mel-RoFormer by Gabox Fv7",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_unwa_v1eplus",
+          "name": "Mel-RoFormer by unwa v1e+",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "less_muddy"
+        },
+        {
+          "id": "mel_roformer_by_unwa_big_beta6x",
+          "name": "Mel-RoFormer unwa big beta6x",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 2,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_by_unwa_big_beta5e",
+          "name": "Mel-RoFormer unwa big beta5e",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 2,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_kimmel_unwa_ft3_prev",
+          "name": "Mel-RoFormer by Kim & unwa ft3",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_gaboxfv8",
+          "name": "Mel-RoFormer by Gabox V8",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_becruily",
+          "name": "Mel-RoFormer by becruily",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_unwa_v2",
+          "name": "Mel-RoFormer by unwa v2",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_unwa_v1e",
+          "name": "Mel-RoFormer by unwa v1e",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_inst_by_unwa_v1",
+          "name": "Mel-RoFormer by unwa v1",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_syhftv5beta1",
+          "name": "Mel-RoFormer SYHFTV5Beta",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "bs_roformer",
+          "name": "BS-RoFormer",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer",
+          "name": "Mel-RoFormer OLD (Kim)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mdx23c_8kfft",
+          "name": "MDX23C 8K FFT",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": true,
+          "heavy": false,
+          "options": [
+            "prerate"
+          ],
+          "description_id": null
+        },
+        {
+          "id": "mdx_v2_vocft",
+          "name": "MDX VocFT",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [
+            "prerate"
+          ],
+          "description_id": null
+        },
+        {
+          "id": "mdx_hq5_e593",
+          "name": "MDX HQ5 (beta)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "htdemucs_ft",
+          "name": "Demucs v4",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mdx_v2_kim_vocal_2",
+          "name": "MDX Kim Vocal 2 (Obsolete!)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mdx_v2_ifb450",
+          "name": "MDX Full band e450 (Obsolete!)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mdx_v2_i418",
+          "name": "MDX Inst e418 (Obsolete!)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "experimental",
+      "separation_type": "experimental",
+      "label": "Otros experimentales",
+      "description": "Canales especiales y extractor central",
+      "group": "special",
+      "models": [
+        {
+          "id": "bs_roformer_mf",
+          "name": "Male/Female (beta)",
+          "backend": "inst_vocal_mf",
+          "stems": [
+            "inst",
+            "male",
+            "female"
+          ],
+          "access_level": 2,
+          "is_test": false,
+          "heavy": true,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "similarity_m23c",
+          "name": "Phantom Center Extractor (MDX)",
+          "backend": "inst_similarity",
+          "stems": [
+            "inst",
+            "similarity"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "wesleyr36"
+        }
+      ]
+    },
+    {
+      "id": "bv_other",
+      "separation_type": "bv_other",
+      "label": "Voces de fondo",
+      "description": "Extracción de coros y separación principal",
+      "group": "special",
+      "models": [
+        {
+          "id": "mel_roformer_lv_bv_chain1",
+          "name": "Mel-RoFormer Lead/Back",
+          "backend": "inst_lv_bv",
+          "stems": [
+            "inst",
+            "lv",
+            "bv"
+          ],
+          "access_level": 3,
+          "is_test": false,
+          "heavy": true,
+          "options": [
+            "lvpanning"
+          ],
+          "description_id": null
+        },
+        {
+          "id": "mb4_mdx_uvr51_ms_beta_bve",
+          "name": "UVR BVE v2",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 2,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning",
+            "uvrbvect",
+            "aggressiveness"
+          ],
+          "description_id": "older"
+        },
+        {
+          "id": "mb4_mdx_uvr51_bve",
+          "name": "UVR BVE",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 2,
+          "is_test": true,
+          "heavy": false,
+          "options": [
+            "lvpanning",
+            "uvrbvect",
+            "aggressiveness"
+          ],
+          "description_id": "older"
+        }
+      ]
+    },
+    {
+      "id": "lv_other",
+      "separation_type": "lv_other",
+      "label": "Mantener coros",
+      "description": "Aísla la voz principal y los coros según el modelo",
+      "group": "2",
+      "models": [
+        {
+          "id": "bs_roformer_karaoke_anvuew",
+          "name": "BS-RoFormer Kar (anvuew)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning"
+          ],
+          "description_id": "new_model"
+        },
+        {
+          "id": "bs_roformer_karaoke_frazer_becruily",
+          "name": "BS-RoFormer Kar (frazer & becruily)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning"
+          ],
+          "description_id": "lv_isolation_best"
+        },
+        {
+          "id": "mel_roformer_karaoke_becruily",
+          "name": "Mel-RoFormer Kar by becruily",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 2,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning"
+          ],
+          "description_id": "lv_isolation_best"
+        },
+        {
+          "id": "mel_roformer_karaoke",
+          "name": "Mel-RoFormer Kar (old)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning"
+          ],
+          "description_id": null
+        },
+        {
+          "id": "mdx_v2_1_i_bv",
+          "name": "MDX (Kar) v2",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning",
+            "prerate"
+          ],
+          "description_id": "use_with_chain_ens"
+        },
+        {
+          "id": "mdxbbv",
+          "name": "MDX (Kar) v1 (Obsolete!)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": "older"
+        },
+        {
+          "id": "mb4v2snbv",
+          "name": "UVR (Kar) v2",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "lvpanning",
+            "aggressiveness"
+          ],
+          "description_id": "older"
+        },
+        {
+          "id": "mb4bv",
+          "name": "UVR (Kar) v1 (Obsolete!)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [
+            "aggressiveness"
+          ],
+          "description_id": "older"
+        }
+      ]
+    },
+    {
+      "id": "bass_other",
+      "separation_type": "bass_other",
+      "label": "Bajo",
+      "description": "Bajo e instrumental restante",
+      "group": "2",
+      "models": [
+        {
+          "id": "bs_roformer",
+          "name": "BS-RoFormer",
+          "backend": "inst_bass",
+          "stems": [
+            "inst",
+            "bass"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "new_model"
+        },
+        {
+          "id": "htdemucs",
+          "name": "Demucs v4",
+          "backend": "inst_bass",
+          "stems": [
+            "inst",
+            "bass"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "drums_other",
+      "separation_type": "drums_other",
+      "label": "Batería",
+      "description": "Batería e instrumental restante",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer",
+          "name": "Mel-RoFormer",
+          "backend": "inst_drums",
+          "stems": [
+            "inst",
+            "drums"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "new_model"
+        },
+        {
+          "id": "htdemucs",
+          "name": "Demucs v4",
+          "backend": "inst_drums",
+          "stems": [
+            "inst",
+            "drums"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "splitter_4",
+      "separation_type": "splitter",
+      "label": "4 pistas / Drumsep",
+      "description": "Múltiples instrumentos en pistas independientes",
+      "group": "4",
+      "models": [
+        {
+          "id": "bs_roformer_4stems",
+          "name": "BS-RoFormer (by ZFTurbo)",
+          "backend": "bdov",
+          "stems": [
+            "vocal",
+            "inst",
+            "drums",
+            "bass"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": true,
+          "options": [],
+          "description_id": "bdov_sep"
+        },
+        {
+          "id": "htdemucs",
+          "name": "Demucs v4",
+          "backend": "bdov",
+          "stems": [
+            "vocal",
+            "inst",
+            "drums",
+            "bass"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "bdov_sep"
+        },
+        {
+          "id": "htdemucs_drumsep",
+          "name": "Demucs v4 (Drumsep)",
+          "backend": "ckst",
+          "stems": [
+            "toms",
+            "cymbals",
+            "snare",
+            "kick"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "ckst_sep"
+        }
+      ]
+    },
+    {
+      "id": "splitter_6",
+      "separation_type": "splitter",
+      "label": "6 pistas",
+      "description": "Múltiples instrumentos en pistas independientes",
+      "group": "6",
+      "models": [
+        {
+          "id": "bs_roformer_sw_bdovgp",
+          "name": "BS-RoFormer 6-stems SW",
+          "backend": "bdovgp",
+          "stems": [
+            "vocal",
+            "inst",
+            "drums",
+            "bass",
+            "guitar",
+            "piano"
+          ],
+          "access_level": 2,
+          "is_test": false,
+          "heavy": true,
+          "options": [],
+          "description_id": "bdovgp_sep"
+        }
+      ]
+    },
+    {
+      "id": "wind_other",
+      "separation_type": "wind_other",
+      "label": "Saxofón / viento",
+      "description": "Instrumentos de viento y acompañamiento",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer",
+          "name": "Mel-RoFormer",
+          "backend": "inst_wind",
+          "stems": [
+            "inst",
+            "wind"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "piano_other",
+      "separation_type": "piano_other",
+      "label": "Piano",
+      "description": "Piano y acompañamiento",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer",
+          "name": "Mel-RoFormer",
+          "backend": "inst_piano",
+          "stems": [
+            "inst",
+            "piano"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "strings_other",
+      "separation_type": "strings_other",
+      "label": "Cuerdas",
+      "description": "Cuerdas y acompañamiento",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer",
+          "name": "Mel-RoFormer",
+          "backend": "inst_strings",
+          "stems": [
+            "inst",
+            "strings"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "guitar_other",
+      "separation_type": "guitar_other",
+      "label": "Guitarra",
+      "description": "Guitarra y acompañamiento",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer",
+          "name": "Mel-RoFormer",
+          "backend": "inst_guitar",
+          "stems": [
+            "inst",
+            "guitar"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_acguitar",
+          "name": "Mel-RoFormer (Acoustic) β",
+          "backend": "inst_acguitar",
+          "stems": [
+            "inst",
+            "acguitar"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "htdemucs",
+          "name": "Demucs v4",
+          "backend": "inst_guitar",
+          "stems": [
+            "inst",
+            "guitar"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "older"
+        }
+      ]
+    },
+    {
+      "id": "dereverb",
+      "separation_type": "dereverb",
+      "label": "De-reverb / eco",
+      "description": "Eliminación de reverberación y eco",
+      "group": "2",
+      "models": [
+        {
+          "id": "bs_roformer_dereverb_anvuew",
+          "name": "BS-RoFormer De-reverb by anvuew",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "new_model"
+        },
+        {
+          "id": "bs_roformer_dereverb_room_anvuew",
+          "name": "De-reverb Room by anvuew",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mel_roformer_dereverb_sucial_v2",
+          "name": "De-reverb & De-echo by Sucial v2",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "vocal_dereverb_echo"
+        },
+        {
+          "id": "mel_roformer_dereverb_anvuew",
+          "name": "Mel-RoFormer De-reverb by anvuew",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "vocal_dereverb"
+        },
+        {
+          "id": "mel_roformer_dereverb_mono_anvuew",
+          "name": "De-reverb (Mono) by anvuew",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "vocal_dereverb"
+        },
+        {
+          "id": "mdx23c_dereverb",
+          "name": "MDX23C (De-reverb)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mb4_dereverb",
+          "name": "UVR (De-reverb)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        },
+        {
+          "id": "mb4_deecho",
+          "name": "UVR (De-echo)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "aggressiveness"
+          ],
+          "description_id": null
+        },
+        {
+          "id": "mdx_dereverb",
+          "name": "MDX (De-reverb) by FoxJoy",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "older"
+        }
+      ]
+    },
+    {
+      "id": "deecho",
+      "separation_type": "deecho",
+      "label": "De-echo",
+      "description": "Eliminación de eco",
+      "group": "2",
+      "models": [
+        {
+          "id": "mb4_deecho",
+          "name": "UVR (De-echo)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "aggressiveness"
+          ],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "decrowd",
+      "separation_type": "decrowd",
+      "label": "De-crowd",
+      "description": "Eliminación de ruido de público",
+      "group": "2",
+      "models": [
+        {
+          "id": "mel_roformer_decrowd",
+          "name": "Mel-RoFormer (De-crowd)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "decrowd"
+        },
+        {
+          "id": "mdx_decrowd",
+          "name": "MDX (De-crowd)",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": null
+        }
+      ]
+    },
+    {
+      "id": "denoise",
+      "separation_type": "denoise",
+      "label": "Restauración / denoise",
+      "description": "Restauración y limpieza de audio",
+      "group": "special",
+      "models": [
+        {
+          "id": "mel_roformer_denoise",
+          "name": "Mel-RoFormer De-noise",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "aggressiveness"
+          ],
+          "description_id": "denoise_mus_voc"
+        },
+        {
+          "id": "mb4_denoise_aufr33",
+          "name": "UVR De-noise",
+          "backend": "inst_vocal",
+          "stems": [
+            "vocal",
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": false,
+          "heavy": false,
+          "options": [
+            "aggressiveness"
+          ],
+          "description_id": "denoise_mus_voc"
+        },
+        {
+          "id": "apollo_lew_v2",
+          "name": "Lew Vocal Enhancer v2 beta",
+          "backend": "vocal",
+          "stems": [
+            "vocal"
+          ],
+          "access_level": 1,
+          "is_test": false,
+          "heavy": false,
+          "options": [],
+          "description_id": "vocal_enh1"
+        },
+        {
+          "id": "apollo_lew_uni",
+          "name": "Apollo Universal by Lew",
+          "backend": "enhanced",
+          "stems": [
+            "enhanced"
+          ],
+          "access_level": 3,
+          "is_test": false,
+          "heavy": true,
+          "options": [],
+          "description_id": "lossy_enh"
+        },
+        {
+          "id": "resemble_enhance",
+          "name": "resemble-enhance",
+          "backend": "inst",
+          "stems": [
+            "inst"
+          ],
+          "access_level": 0,
+          "is_test": true,
+          "heavy": false,
+          "options": [],
+          "description_id": "denoise_speech"
+        }
+      ]
+    }
+  ]
+}
