@@ -210,17 +210,37 @@ fn json_string<'a>(json: &'a Value, field: &str) -> Option<&'a str> {
 const LOGIN_LABEL: &str = "login";
 static WATCH_ID: AtomicU64 = AtomicU64::new(0);
 
-// Indicador de carga dentro de la propia ventana de login: se pinta nada más
-// empezar la navegación y se quita al terminar de cargar.
+// Barra de progreso fina arriba, como la de un navegador. Arranca al navegar
+// (clic, formulario, cierre de página) y también al cargar la página nueva;
+// avanza sola y se completa en el evento `load`.
 const LOADING_OVERLAY: &str = r#"(function(){
   if (window.top !== window) return;
-  var d = document.createElement('div');
-  d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(15,17,23,.82);pointer-events:none;font:600 15px -apple-system,sans-serif;color:#fff;gap:12px';
-  d.innerHTML = '<style>@keyframes xmspin{to{transform:rotate(360deg)}}</style><div style="width:22px;height:22px;border:3px solid #ffffff44;border-top-color:#fff;border-radius:50%;animation:xmspin .8s linear infinite"></div>Cargando…';
-  (document.documentElement || document).appendChild(d);
-  var rm = function(){ d.remove(); };
-  window.addEventListener('load', rm);
-  setTimeout(rm, 20000);
+  var bar, timer, pct = 0;
+  function make(){
+    if (bar && bar.isConnected) return;
+    bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:2147483647;pointer-events:none;background:linear-gradient(90deg,#7c5cff,#ff5c8a);box-shadow:0 0 8px #7c5cff;transition:width .3s ease,opacity .3s ease;opacity:1';
+    (document.documentElement || document).appendChild(bar);
+  }
+  function start(){
+    clearInterval(timer); make(); pct = 6; bar.style.opacity = '1'; bar.style.width = pct + '%';
+    timer = setInterval(function(){ pct += (92 - pct) * 0.08; bar.style.width = pct + '%'; }, 250);
+  }
+  function done(){
+    clearInterval(timer); if (!bar) return;
+    bar.style.width = '100%';
+    setTimeout(function(){ bar.style.opacity = '0'; setTimeout(function(){ bar && bar.remove(); }, 350); }, 250);
+  }
+  start();
+  window.addEventListener('load', done);
+  document.addEventListener('readystatechange', function(){ if (document.readyState === 'complete') done(); });
+  document.addEventListener('click', function(e){
+    var a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (a && a.href && a.target !== '_blank' && a.href.indexOf('javascript:') !== 0 && a.href.split('#')[0] !== location.href.split('#')[0]) start();
+  }, true);
+  document.addEventListener('submit', start, true);
+  window.addEventListener('beforeunload', start);
+  setTimeout(done, 30000);
 })();"#;
 
 fn cookie_header(win: &WebviewWindow) -> String {

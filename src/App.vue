@@ -382,8 +382,8 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
     </div>
 
     <div v-if="loggingIn" class="banner info">
-      <span class="row"><span v-if="loginLoading" class="mini-spin" aria-hidden="true" />
-        {{ loginLoading ? 'Cargando la página de inicio de sesión…' : 'Inicia sesión en la ventana que se ha abierto (puedes usar Google). Se detectará automáticamente.' }}</span>
+      <span>{{ loginLoading ? 'Cargando la página de inicio de sesión…' : 'Inicia sesión en la ventana que se ha abierto (puedes usar Google). Se detectará automáticamente.' }}</span>
+      <span v-if="loginLoading" class="topbar" aria-hidden="true"><i /></span>
     </div>
 
     <div v-if="session?.account_expired" class="banner info">
