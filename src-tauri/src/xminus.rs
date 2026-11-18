@@ -243,26 +243,67 @@ const LOADING_OVERLAY: &str = r#"(function(){
   setTimeout(done, 30000);
 })();"#;
 
-fn cookie_header(win: &WebviewWindow) -> String {
-    Url::parse("https://x-minus.pro/").ok()
-        .and_then(|u| win.cookies_for_url(u).ok())
-        .map(|cs| {
-            let mut v: Vec<String> = cs.iter().map(|c| format!("{}={}", c.name(), c.value())).collect();
-            v.sort();
-            v.join("; ")
-        })
-        .unwrap_or_default()
+/// Dominios que guardan la sesión. La cuenta vive en uvronline.app; la web, en x-minus.pro.
+const COOKIE_DOMAINS: [&str; 3] = ["x-minus.pro", "uvronline.app", "uvronline.vip"];
+
+/// Cookies agrupadas por dominio: cada petición lleva solo las de su propio sitio.
+#[derive(Default)]
+struct Cookies {
+    by_domain: Vec<(&'static str, String)>,
+    /// Cookie pegada a mano o embebida; solo se envía a x-minus.pro.
+    extra: Option<String>,
 }
 
-/// Vigila en segundo plano la ventana de login y avisa a la interfaz cuando
-/// el usuario termina de entrar (volviendo a x-minus.pro con cookies nuevas).
+impl Cookies {
+    fn is_empty(&self) -> bool {
+        self.extra.is_none() && self.by_domain.iter().all(|(_, h)| h.is_empty())
+    }
+
+    fn header_for(&self, url: &Url) -> Option<String> {
+        if !trusted_page_url(url) { return None; }
+        let host = url.host_str().unwrap_or_default();
+        let mut parts: Vec<&str> = self.by_domain.iter()
+            .filter(|(d, h)| !h.is_empty() && (host == *d || host.ends_with(&format!(".{d}"))))
+            .map(|(_, h)| h.as_str()).collect();
+        if let Some(extra) = self.extra.as_deref().filter(|_| is_x_minus_host(url)) {
+            parts.push(extra);
+        }
+        (!parts.is_empty()).then(|| parts.join("; "))
+    }
+
+    fn fingerprint(&self) -> String {
+        let mut v: Vec<String> = self.by_domain.iter().map(|(d, h)| format!("{d}:{h}")).collect();
+        v.sort();
+        v.join("|")
+    }
+}
+
+/// Lee las cookies de cada dominio del almacén de la ventana de login.
+fn collect_cookies(win: Option<&WebviewWindow>, extra: Option<String>) -> Cookies {
+    let by_domain = win.map(|w| COOKIE_DOMAINS.iter().map(|d| {
+        let header = Url::parse(&format!("https://{d}/")).ok()
+            .and_then(|u| w.cookies_for_url(u).ok())
+            .map(|cs| {
+                let mut v: Vec<String> = cs.iter().map(|c| format!("{}={}", c.name(), c.value())).collect();
+                v.sort();
+                v.join("; ")
+            })
+            .filter(|h| !h.contains(['\r', '\n']))
+            .unwrap_or_default();
+        (*d, header)
+    }).collect()).unwrap_or_default();
+    Cookies { by_domain, extra }
+}
+
+/// Vigila en segundo plano la ventana de login. En cuanto la ventana está en una
+/// página del servicio (que no sea /login), comprueba de verdad si hay sesión;
+/// si la hay, cierra la ventana y avisa a la interfaz.
 fn watch_login(app: AppHandle) {
     let id = WATCH_ID.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
-        let baseline = app.get_webview_window(LOGIN_LABEL).map(|w| cookie_header(&w)).unwrap_or_default();
-        let baseline_names: Vec<String> = baseline.split("; ")
-            .filter_map(|c| c.split('=').next()).map(str::to_owned).collect();
-        let mut left_site = false;
+        let http = app.state::<AppState>().http.clone();
+        let mut last = String::new();
+        let mut ticks_since_try = u32::MAX / 2;
         loop {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             if WATCH_ID.load(Ordering::SeqCst) != id { return; }
@@ -271,12 +312,19 @@ fn watch_login(app: AppHandle) {
                 return;
             };
             if !win.is_visible().unwrap_or(false) { return; }
-            let on_site = win.url().ok().and_then(|u| u.host_str().map(|h| h == "x-minus.pro")).unwrap_or(false);
-            if !on_site { left_site = true; continue; }
-            let now = cookie_header(&win);
-            let new_names = now.split("; ").filter_map(|c| c.split('=').next())
-                .any(|n| !n.is_empty() && !baseline_names.iter().any(|b| b == n));
-            if (left_site && now != baseline) || new_names {
+            let on_service = win.url().ok()
+                .map(|u| trusted_page_url(&u) && !u.path().starts_with("/login"))
+                .unwrap_or(false);
+            if !on_service { continue; }
+            let cookies = collect_cookies(Some(&win), None);
+            if cookies.is_empty() { continue; }
+            let key = cookies.fingerprint();
+            ticks_since_try = ticks_since_try.saturating_add(1);
+            // Reintenta si cambian las cookies o, si no, cada ~6 s.
+            if key == last && ticks_since_try < 4 { continue; }
+            last = key;
+            ticks_since_try = 0;
+            if fetch_session(&http, &cookies).await.is_ok() {
                 let _ = win.hide();
                 let _ = app.emit("login-detected", ());
                 return;
@@ -308,15 +356,6 @@ fn login_window(app: &AppHandle, visible: bool) -> Result<WebviewWindow, String>
         .map_err(|_| "No se pudo abrir la ventana de inicio de sesión".to_string())
 }
 
-/// Cookies de x-minus.pro guardadas por la ventana de login (si hay).
-fn login_cookie(app: &AppHandle) -> Option<String> {
-    let win = login_window(app, false).ok()?;
-    let cookies = win.cookies_for_url(Url::parse("https://x-minus.pro/").ok()?).ok()?;
-    let header = cookies.iter().map(|c| format!("{}={}", c.name(), c.value()))
-        .collect::<Vec<_>>().join("; ");
-    (!header.is_empty() && !header.contains(['\r', '\n'])).then_some(header)
-}
-
 #[tauri::command]
 pub async fn open_login(app: AppHandle) -> Result<(), String> {
     let win = login_window(&app, true)?;
@@ -332,13 +371,16 @@ pub async fn close_login(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Borra las cookies de x-minus.pro del almacén de la app.
+/// Borra las cookies de x-minus.pro y uvronline del almacén de la app.
 #[tauri::command]
 pub async fn logout(app: AppHandle) -> Result<(), String> {
     let win = login_window(&app, false)?;
-    let cookies = win.cookies_for_url(Url::parse("https://x-minus.pro/").map_err(|e| e.to_string())?)
-        .map_err(|_| "No se pudieron leer las cookies".to_string())?;
-    for c in cookies { let _ = win.delete_cookie(c); }
+    for d in COOKIE_DOMAINS {
+        let Ok(url) = Url::parse(&format!("https://{d}/")) else { continue };
+        if let Ok(cookies) = win.cookies_for_url(url) {
+            for c in cookies { let _ = win.delete_cookie(c); }
+        }
+    }
     WATCH_ID.fetch_add(1, Ordering::SeqCst);
     let _ = win.hide();
     Ok(())
@@ -366,15 +408,15 @@ fn trusted_page_url(url: &Url) -> bool {
         .iter().any(|d| host == *d || host.ends_with(&format!(".{d}"))))
 }
 
-async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session, String> {
+async fn fetch_session(client: &Client, cookies: &Cookies) -> Result<Session, String> {
     // Las redirecciones están desactivadas en el cliente: se siguen a mano y solo
-    // hacia x-minus.pro, que es el único dominio al que se envía la cookie.
+    // hacia dominios del servicio; cada salto lleva únicamente las cookies de su sitio.
     const MAX_REDIRECTS: usize = 5;
     let mut url = Url::parse(PAGE).map_err(|e| e.to_string())?;
     for _ in 0..=MAX_REDIRECTS {
         let mut req = client.get(url.clone()).header(ACCEPT, "text/html");
-        if let Some(cookie) = cookie.filter(|_| is_x_minus_host(&url)) {
-            req = req.header(COOKIE, cookie);
+        if let Some(header) = cookies.header_for(&url) {
+            req = req.header(COOKIE, header);
         }
         let resp = req.send().await
             .map_err(|_| "No se pudo conectar. Comprueba tu conexión a internet.".to_string())?;
@@ -403,9 +445,9 @@ async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session,
                 .and_then(|sel| Html::parse_document(&html).select(&sel).next()
                     .map(|t| t.text().collect::<String>().trim().chars().take(60).collect::<String>()))
                 .unwrap_or_default();
-            format!("{e} [{}{} · «{}» · {} bytes · cookie {}]",
+            format!("{e} [{}{} · «{}» · {} bytes · cookies {}]",
                 final_url.host_str().unwrap_or("?"), final_url.path(), title, html.len(),
-                if cookie.is_some() { "enviada" } else { "no enviada" })
+                if cookies.header_for(&final_url).is_some() { "enviadas" } else { "no enviadas" })
         });
     }
     Err("Demasiadas redirecciones al abrir el servicio.".into())
@@ -422,15 +464,12 @@ pub async fn initialize_session(
     if manual.as_deref().is_some_and(|c| c.contains(['\r', '\n'])) {
         return Err("La cookie no es válida".into());
     }
-    let cookie = manual.clone().or_else(|| login_cookie(&app)).or_else(embedded_cookie);
-    let (session, using_account, account_expired) =
-        match fetch_session(&state.http, cookie.as_deref()).await {
-            Ok(session) => (session, cookie.is_some(), false),
-            // Si la cookie embebida caducó, seguir en modo gratuito sin ella.
-            Err(_) if manual.is_none() && cookie.is_some() =>
-                (fetch_session(&state.http, None).await?, false, true),
-            Err(e) => return Err(e),
-        };
+    let win = login_window(&app, false).ok();
+    let cookies = collect_cookies(win.as_ref(), manual.or_else(embedded_cookie));
+    let using_account = !cookies.is_empty();
+    // Sin sesión válida X-Minus redirige a /login: se devuelve LOGIN_REQUIRED.
+    let session = fetch_session(&state.http, &cookies).await?;
+    let account_expired = false;
     let info = SessionInfo {
         version: session.version.clone(),
         using_account,
@@ -783,6 +822,20 @@ mod tests {
         assert!(trusted_page_url(&Url::parse("https://uvronline.app/ai").unwrap()));
         assert!(!trusted_page_url(&Url::parse("https://uvronline.app.evil.com/ai").unwrap()));
         assert!(!is_x_minus_host(&Url::parse("https://uvronline.app/ai").unwrap()));
+    }
+
+    #[test]
+    fn cookies_are_sent_only_to_their_own_site() {
+        let jar = Cookies {
+            by_domain: vec![("x-minus.pro", "a=1".into()), ("uvronline.app", "sid=9".into()), ("uvronline.vip", String::new())],
+            extra: None,
+        };
+        let web = Url::parse("https://x-minus.pro/ai").unwrap();
+        let acct = Url::parse("https://uvronline.app/login").unwrap();
+        assert_eq!(jar.header_for(&web).as_deref(), Some("a=1"));
+        assert_eq!(jar.header_for(&acct).as_deref(), Some("sid=9"));
+        assert!(jar.header_for(&Url::parse("https://uvronline.vip/x").unwrap()).is_none());
+        assert!(jar.header_for(&Url::parse("https://evil.com/").unwrap()).is_none());
     }
 
     #[test]
