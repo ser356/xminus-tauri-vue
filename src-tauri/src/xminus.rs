@@ -217,40 +217,59 @@ fn json_string<'a>(json: &'a Value, field: &str) -> Option<&'a str> {
 }
 
 const LOGIN_LABEL: &str = "login";
+const PROBE_LABEL: &str = "session-probe";
 const ACCOUNT_PAGE: &str = "https://uvronline.app/ai";
 static WATCH_ID: AtomicU64 = AtomicU64::new(0);
 
-// Barra de progreso fina arriba, como la de un navegador. Arranca al navegar
-// (clic, formulario, cierre de página) y también al cargar la página nueva;
-// avanza sola y se completa en el evento `load`.
-const LOADING_OVERLAY: &str = r#"(function(){
-  if (window.top !== window) return;
-  var bar, timer, pct = 0;
-  function make(){
-    if (bar && bar.isConnected) return;
-    bar = document.createElement('div');
-    bar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:2147483647;pointer-events:none;background:linear-gradient(90deg,#7c5cff,#ff5c8a);box-shadow:0 0 8px #7c5cff;transition:width .3s ease,opacity .3s ease;opacity:1';
-    (document.documentElement || document).appendChild(bar);
-  }
-  function start(){
-    clearInterval(timer); make(); pct = 6; bar.style.opacity = '1'; bar.style.width = pct + '%';
-    timer = setInterval(function(){ pct += (92 - pct) * 0.08; bar.style.width = pct + '%'; }, 250);
-  }
-  function done(){
-    clearInterval(timer); if (!bar) return;
-    bar.style.width = '100%';
-    setTimeout(function(){ bar.style.opacity = '0'; setTimeout(function(){ bar && bar.remove(); }, 350); }, 250);
-  }
-  start();
-  window.addEventListener('load', done);
-  document.addEventListener('readystatechange', function(){ if (document.readyState === 'complete') done(); });
-  document.addEventListener('click', function(e){
-    var a = e.target && e.target.closest && e.target.closest('a[href]');
-    if (a && a.href && a.target !== '_blank' && a.href.indexOf('javascript:') !== 0 && a.href.split('#')[0] !== location.href.split('#')[0]) start();
-  }, true);
-  document.addEventListener('submit', start, true);
-  window.addEventListener('beforeunload', start);
-  setTimeout(done, 30000);
+// Barra de progreso fina arriba, como la de un navegador.
+// IMPORTANTE (Windows/WebView2): este script se ejecuta antes de que exista
+// <html>. Nunca debe insertar nada en `document` directamente (eso convierte la
+// barra en la raíz del documento y la página sale en blanco): espera a <body>.
+// Todo va en try/catch para que un fallo aquí jamás rompa la página.
+const LOADING_BAR: &str = r#"(function(){
+  try {
+    if (window.top !== window) return;
+    var bar = null, timer = null, pct = 0, wanted = false;
+    function mount(){
+      try {
+        if (bar && bar.isConnected) return true;
+        if (!document.body) return false;
+        bar = document.createElement('div');
+        bar.setAttribute('aria-hidden', 'true');
+        bar.style.cssText = 'position:fixed;top:0;left:0;height:3px;width:0;z-index:2147483647;pointer-events:none;background:linear-gradient(90deg,#7c5cff,#ff5c8a);box-shadow:0 0 8px #7c5cff;transition:width .3s ease,opacity .3s ease';
+        document.body.appendChild(bar);
+        return true;
+      } catch (e) { return false; }
+    }
+    function paint(){ if (bar) { bar.style.opacity = '1'; bar.style.width = pct + '%'; } }
+    function start(){
+      wanted = true; pct = 6; clearInterval(timer);
+      timer = setInterval(function(){
+        if (!mount()) return;
+        pct += (92 - pct) * 0.08; paint();
+      }, 120);
+    }
+    function done(){
+      wanted = false; clearInterval(timer);
+      if (!mount()) return;
+      pct = 100; paint();
+      setTimeout(function(){ if (!wanted && bar) bar.style.opacity = '0'; }, 250);
+      setTimeout(function(){ if (!wanted && bar) { bar.remove(); bar = null; } }, 600);
+    }
+    start();
+    window.addEventListener('load', done);
+    document.addEventListener('click', function(e){
+      try {
+        var a = e.target && e.target.closest && e.target.closest('a[href]');
+        if (a && a.href && a.target !== '_blank' && a.href.indexOf('javascript:') !== 0
+            && a.href.split('#')[0] !== location.href.split('#')[0]) start();
+      } catch (_) {}
+    }, true);
+    document.addEventListener('submit', start, true);
+    window.addEventListener('beforeunload', start);
+    window.addEventListener('pageshow', function(ev){ if (ev.persisted) done(); });
+    setTimeout(done, 30000);
+  } catch (e) {}
 })();"#;
 
 /// Dominios que guardan la sesión. La cuenta vive en uvronline.app; la web, en x-minus.pro.
@@ -388,7 +407,7 @@ fn watch_login(app: AppHandle) {
             match page_state(&win).await {
                 PageState::LoggedIn(_) => {
                     if WATCH_ID.load(Ordering::SeqCst) != id { return; }
-                    let _ = win.hide();
+                    let _ = win.destroy();
                     let _ = app.emit("login-detected", ());
                     return;
                 }
@@ -402,35 +421,30 @@ fn watch_login(app: AppHandle) {
     });
 }
 
-/// Ventana con la web de X-Minus donde el usuario inicia sesión él mismo
-/// (también con Google). Sus cookies viven en el almacén del propio webview.
-fn login_window(app: &AppHandle, visible: bool) -> Result<WebviewWindow, String> {
-    if let Some(win) = app.get_webview_window(LOGIN_LABEL) {
+/// Ambas ventanas usan el perfil web predeterminado para compartir la sesión.
+fn login_window(app: &AppHandle, interactive: bool) -> Result<WebviewWindow, String> {
+    let label = if interactive { LOGIN_LABEL } else { PROBE_LABEL };
+    if let Some(win) = app.get_webview_window(label) {
         return Ok(win);
     }
-    let url = PAGE.parse().map_err(|_| "URL no válida".to_string())?;
-    WebviewWindowBuilder::new(app, LOGIN_LABEL, WebviewUrl::External(url))
+    let url = Url::parse(ACCOUNT_PAGE).map_err(|e| e.to_string())?;
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
         .title("Iniciar sesión")
         .inner_size(480.0, 740.0)
-        .visible(visible)
-        .on_navigation(|u| u.scheme() == "https")
-        .initialization_script(LOADING_OVERLAY)
-        .on_page_load(|w, p| {
-            // Solo informa a la interfaz mientras la ventana de login está a la vista.
-            if w.is_visible().unwrap_or(false) {
-                let _ = w.app_handle().emit("login-loading", matches!(p.event(), PageLoadEvent::Started));
-            }
+        .visible(interactive)
+        .on_navigation(|u| u.scheme() == "https");
+    let builder = if interactive {
+        builder.initialization_script(LOADING_BAR).on_page_load(|w, p| {
+            let _ = w.app_handle().emit_to("main", "login-loading", matches!(p.event(), PageLoadEvent::Started));
         })
-        .build()
-        .map_err(|_| "No se pudo abrir la ventana de inicio de sesión".to_string())
+    } else { builder };
+    builder.build().map_err(|_| "No se pudo abrir la ventana de inicio de sesión".to_string())
 }
 
 #[tauri::command]
 pub async fn open_login(app: AppHandle) -> Result<(), String> {
     let win = login_window(&app, true)?;
-    let account = Url::parse(ACCOUNT_PAGE).map_err(|e| e.to_string())?;
-    win.navigate(account).map_err(|_| "No se pudo abrir la página de la cuenta".to_string())?;
-    win.show().and_then(|_| win.set_focus()).map_err(|_| "No se pudo mostrar la ventana".to_string())?;
+    win.set_focus().map_err(|_| "No se pudo enfocar la ventana de inicio de sesión".to_string())?;
     watch_login(app);
     Ok(())
 }
@@ -438,7 +452,9 @@ pub async fn open_login(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn close_login(app: AppHandle) -> Result<(), String> {
     WATCH_ID.fetch_add(1, Ordering::SeqCst);
-    if let Some(win) = app.get_webview_window(LOGIN_LABEL) { let _ = win.hide(); }
+    if let Some(win) = app.get_webview_window(LOGIN_LABEL) {
+        win.destroy().map_err(|_| "No se pudo cerrar la ventana de inicio de sesión".to_string())?;
+    }
     Ok(())
 }
 

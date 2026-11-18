@@ -212,6 +212,13 @@ async function openLogin() {
   try { await invoke('open_login'); }
   catch (e) { loggingIn.value = false; loginLoading.value = false; connectError.value = errorText(e); }
 }
+async function cancelLogin() {
+  try {
+    await invoke('close_login');
+    loggingIn.value = false;
+    loginLoading.value = false;
+  } catch (e) { connectError.value = errorText(e); }
+}
 async function logout() {
   await invoke('logout').catch(() => {});
   loggingIn.value = false;
@@ -489,6 +496,7 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
 
     <div v-if="loggingIn" class="banner info">
       <span>{{ loginLoading ? 'Cargando la página de inicio de sesión…' : 'Inicia sesión en la ventana que se ha abierto (puedes usar Google). Se detectará automáticamente.' }}</span>
+      <button class="ghost" @click="cancelLogin">Cerrar ventana</button>
       <span v-if="loginLoading" class="topbar" aria-hidden="true"><i /></span>
     </div>
 
