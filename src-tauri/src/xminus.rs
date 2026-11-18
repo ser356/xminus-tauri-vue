@@ -344,9 +344,16 @@ pub async fn logout(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn trusted_page_url(url: &Url) -> bool {
+fn is_x_minus_host(url: &Url) -> bool {
     let host = url.host_str().unwrap_or_default();
     url.scheme() == "https" && (host == "x-minus.pro" || host.ends_with(".x-minus.pro"))
+}
+
+/// Dominios a los que puede redirigir la página. Solo `x-minus.pro` recibe la cookie.
+fn trusted_page_url(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or_default();
+    is_x_minus_host(url) || (url.scheme() == "https" && ["uvronline.app", "uvronline.vip"]
+        .iter().any(|d| host == *d || host.ends_with(&format!(".{d}"))))
 }
 
 async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session, String> {
@@ -356,7 +363,7 @@ async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session,
     let mut url = Url::parse(PAGE).map_err(|e| e.to_string())?;
     for _ in 0..=MAX_REDIRECTS {
         let mut req = client.get(url.clone()).header(ACCEPT, "text/html");
-        if let Some(cookie) = cookie {
+        if let Some(cookie) = cookie.filter(|_| is_x_minus_host(&url)) {
             req = req.header(COOKIE, cookie);
         }
         let resp = req.send().await
@@ -750,6 +757,9 @@ mod tests {
         assert!(trusted_page_url(&Url::parse("https://x-minus.pro/ai?lang=es").unwrap()));
         assert!(!trusted_page_url(&Url::parse("http://x-minus.pro/ai").unwrap()));
         assert!(!trusted_page_url(&Url::parse("https://x-minus.pro.evil.com/ai").unwrap()));
+        assert!(trusted_page_url(&Url::parse("https://uvronline.app/ai").unwrap()));
+        assert!(!trusted_page_url(&Url::parse("https://uvronline.app.evil.com/ai").unwrap()));
+        assert!(!is_x_minus_host(&Url::parse("https://uvronline.app/ai").unwrap()));
     }
 
     #[test]
