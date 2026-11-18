@@ -66,6 +66,10 @@ jobs:
           if ($upgrade.ExitCode -ne 0) { throw 'Falló la actualización' }
           $expected = Get-FileHash 'src-tauri/target/release/xminus-tauri-vue.exe'
           if ((Get-FileHash $installedExe).Hash -ne $expected.Hash) {
+            Get-ChildItem $installDir,"$env:LOCALAPPDATA/X-Minus Stems" -Filter '*.exe' -ErrorAction SilentlyContinue |
+              Select-Object FullName,@{Name='Version';Expression={$_.VersionInfo.ProductVersion}} | Format-List
+            Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\X-Minus Stems' |
+              Select-Object DisplayVersion,InstallLocation,UninstallString | Format-List
             throw 'El ejecutable nuevo no está en la carpeta original'
           }
           $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\X-Minus Stems'
