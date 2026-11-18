@@ -382,8 +382,18 @@ async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session,
         if !resp.status().is_success() {
             return Err(format!("El servicio no está disponible ahora mismo (HTTP {}).", resp.status().as_u16()));
         }
+        let final_url = url.clone();
         let html = resp.text().await.map_err(|e| e.to_string())?;
-        return read_session(&html);
+        return read_session(&html).map_err(|e| {
+            // Diagnóstico sin secretos: dónde se aterrizó y qué página era.
+            let title = Selector::parse("title").ok()
+                .and_then(|sel| Html::parse_document(&html).select(&sel).next()
+                    .map(|t| t.text().collect::<String>().trim().chars().take(60).collect::<String>()))
+                .unwrap_or_default();
+            format!("{e} [{}{} · «{}» · {} bytes · cookie {}]",
+                final_url.host_str().unwrap_or("?"), final_url.path(), title, html.len(),
+                if cookie.is_some() { "enviada" } else { "no enviada" })
+        });
     }
     Err("Demasiadas redirecciones al abrir el servicio.".into())
 }
