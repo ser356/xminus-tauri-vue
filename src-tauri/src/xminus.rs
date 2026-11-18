@@ -344,19 +344,40 @@ pub async fn logout(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn trusted_page_url(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or_default();
+    url.scheme() == "https" && (host == "x-minus.pro" || host.ends_with(".x-minus.pro"))
+}
+
 async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session, String> {
-    let mut req = client.get(PAGE).header(ACCEPT, "text/html");
-    if let Some(cookie) = cookie {
-        // Cookie se envía únicamente a x-minus.pro, nunca al servidor CDN.
-        req = req.header(COOKIE, cookie);
+    // Las redirecciones están desactivadas en el cliente: se siguen a mano y solo
+    // hacia x-minus.pro, que es el único dominio al que se envía la cookie.
+    const MAX_REDIRECTS: usize = 5;
+    let mut url = Url::parse(PAGE).map_err(|e| e.to_string())?;
+    for _ in 0..=MAX_REDIRECTS {
+        let mut req = client.get(url.clone()).header(ACCEPT, "text/html");
+        if let Some(cookie) = cookie {
+            req = req.header(COOKIE, cookie);
+        }
+        let resp = req.send().await
+            .map_err(|_| "No se pudo conectar. Comprueba tu conexión a internet.".to_string())?;
+        if resp.status().is_redirection() {
+            let location = resp.headers().get(LOCATION).and_then(|v| v.to_str().ok())
+                .ok_or("El servicio redirigió sin indicar adónde.")?;
+            let next = url.join(location).map_err(|_| "Redirección no válida".to_string())?;
+            if !trusted_page_url(&next) {
+                return Err("El servicio redirigió a un sitio no permitido.".into());
+            }
+            url = next;
+            continue;
+        }
+        if !resp.status().is_success() {
+            return Err(format!("El servicio no está disponible ahora mismo (HTTP {}).", resp.status().as_u16()));
+        }
+        let html = resp.text().await.map_err(|e| e.to_string())?;
+        return read_session(&html);
     }
-    let resp = req.send().await
-        .map_err(|_| "No se pudo conectar. Comprueba tu conexión a internet.".to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("El servicio no está disponible ahora mismo (HTTP {}).", resp.status().as_u16()));
-    }
-    let html = resp.text().await.map_err(|e| e.to_string())?;
-    read_session(&html)
+    Err("Demasiadas redirecciones al abrir el servicio.".into())
 }
 
 #[tauri::command]
@@ -721,6 +742,13 @@ mod tests {
     #[test]
     fn embedded_cookie_is_absent_or_non_empty() {
         assert!(embedded_cookie().map_or(true, |c| !c.is_empty() && !c.contains('\n')));
+    }
+
+    #[test]
+    fn page_redirects_only_to_x_minus() {
+        assert!(trusted_page_url(&Url::parse("https://x-minus.pro/ai?lang=es").unwrap()));
+        assert!(!trusted_page_url(&Url::parse("http://x-minus.pro/ai").unwrap()));
+        assert!(!trusted_page_url(&Url::parse("https://x-minus.pro.evil.com/ai").unwrap()));
     }
 
     #[test]
