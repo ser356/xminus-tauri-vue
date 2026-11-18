@@ -217,6 +217,7 @@ fn json_string<'a>(json: &'a Value, field: &str) -> Option<&'a str> {
 }
 
 const LOGIN_LABEL: &str = "login";
+const ACCOUNT_PAGE: &str = "https://uvronline.app/ai";
 static WATCH_ID: AtomicU64 = AtomicU64::new(0);
 
 // Barra de progreso fina arriba, como la de un navegador. Arranca al navegar
@@ -351,15 +352,17 @@ async fn load_and_read(win: &WebviewWindow, url: Url) -> PageState {
 /// x-minus.pro sin sesión es el modo gratuito.
 async fn session_from_window(app: &AppHandle) -> Result<(Session, bool), String> {
     let win = login_window(app, false)?;
-    let account = Url::parse("https://uvronline.app/ai").map_err(|e| e.to_string())?;
+    let account = Url::parse(ACCOUNT_PAGE).map_err(|e| e.to_string())?;
     let public = Url::parse(PAGE).map_err(|e| e.to_string())?;
-    if let PageState::LoggedIn(s) = load_and_read(&win, account).await {
-        return Ok((s, true));
-    }
+    let account_needs_login = match load_and_read(&win, account).await {
+        PageState::LoggedIn(s) => return Ok((s, true)),
+        state => matches!(state, PageState::NeedsLogin),
+    };
     match load_and_read(&win, public).await {
         PageState::LoggedIn(s) => Ok((s, true)),
         PageState::Anonymous(s) => Ok((s, false)),
         PageState::NeedsLogin => Err(LOGIN_REQUIRED.into()),
+        _ if account_needs_login => Err(LOGIN_REQUIRED.into()),
         PageState::OtherPage(url) => Err(format!("El servicio ha cambiado y la app no lo reconoce ({}{}).",
             url.host_str().unwrap_or("?"), url.path())),
         PageState::Loading => Err("El servicio está tardando demasiado en responder. Inténtalo de nuevo.".into()),
@@ -390,7 +393,7 @@ fn watch_login(app: AppHandle) {
                     return;
                 }
                 // Tras entrar, la web puede dejarte en su portada: ir al separador.
-                PageState::OtherPage(url) if !is_x_minus_host(&url) => {
+                PageState::OtherPage(url) if !is_x_minus_host(&url) && url.path() == "/" => {
                     if let Some(ai) = separator_page(&url) { let _ = win.navigate(ai); }
                 }
                 _ => {}
@@ -425,6 +428,8 @@ fn login_window(app: &AppHandle, visible: bool) -> Result<WebviewWindow, String>
 #[tauri::command]
 pub async fn open_login(app: AppHandle) -> Result<(), String> {
     let win = login_window(&app, true)?;
+    let account = Url::parse(ACCOUNT_PAGE).map_err(|e| e.to_string())?;
+    win.navigate(account).map_err(|_| "No se pudo abrir la página de la cuenta".to_string())?;
     win.show().and_then(|_| win.set_focus()).map_err(|_| "No se pudo mostrar la ventana".to_string())?;
     watch_login(app);
     Ok(())
@@ -475,9 +480,7 @@ const LOGIN_REQUIRED: &str = "LOGIN_REQUIRED";
 
 /// X-Minus manda a esta página cuando no hay una sesión válida.
 fn is_login_redirect(url: &Url) -> bool {
-    let host = url.host_str().unwrap_or_default();
-    (host == "uvronline.app" || host.ends_with(".uvronline.app") || is_x_minus_host(url))
-        && url.path().starts_with("/login")
+    trusted_page_url(url) && url.path().split('/').any(|part| part == "login")
 }
 
 fn trusted_page_url(url: &Url) -> bool {
@@ -934,6 +937,8 @@ mod tests {
     #[test]
     fn detects_login_redirect() {
         assert!(is_login_redirect(&Url::parse("https://uvronline.app/login?ref=x").unwrap()));
+        assert!(is_login_redirect(&Url::parse("https://uvronline.vip/es/login/").unwrap()));
+        assert!(!is_login_redirect(&Url::parse("http://uvronline.app/login").unwrap()));
         assert!(!is_login_redirect(&Url::parse("https://uvronline.app/ai").unwrap()));
         assert!(!is_login_redirect(&Url::parse("https://evil.com/login").unwrap()));
     }

@@ -28,6 +28,36 @@ jobs:
       - name: Compilar la aplicación y el instalador NSIS
         run: npm run tauri -- build --bundles nsis -- --locked
 
+      - name: Verificar la actualización desde v0.3.0
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $oldSetup = Join-Path $env:RUNNER_TEMP 'previous-setup.exe'
+          gh release download v0.3.0 --pattern '*x64-setup.exe' --output $oldSetup
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo obtener el instalador v0.3.0' }
+          if ((Get-FileHash $oldSetup).Hash -ne '5fe4c6166494cc199be74e34c0fff381d1faa723a7cafb9b9d7bd6369877e05a') {
+            throw 'El instalador anterior no coincide con la release verificada'
+          }
+
+          $installDir = Join-Path $env:RUNNER_TEMP 'X-Minus instalado'
+          $installedExe = Join-Path $installDir 'xminus-tauri-vue.exe'
+          $old = Start-Process $oldSetup -ArgumentList "/S /D=$installDir" -Wait -PassThru
+          if ($old.ExitCode -ne 0 -or !(Test-Path $installedExe)) { throw 'Falló la instalación inicial' }
+
+          $newSetup = Get-Item 'src-tauri/target/release/bundle/nsis/*-setup.exe'
+          $upgrade = Start-Process $newSetup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw 'Falló la actualización' }
+          $expected = Get-FileHash 'src-tauri/target/release/xminus-tauri-vue.exe'
+          if ((Get-FileHash $installedExe).Hash -ne $expected.Hash) {
+            throw 'El ejecutable nuevo no está en la carpeta original'
+          }
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\X-Minus Stems'
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ((Get-ItemPropertyValue $key DisplayVersion) -ne $version) {
+            throw 'Windows no registró la nueva versión'
+          }
+
       - name: Guardar el instalador
         uses: actions/upload-artifact@v4
         with:

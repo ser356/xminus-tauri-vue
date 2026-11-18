@@ -193,8 +193,9 @@ async function connect(cookie?: string) {
   } catch (e) {
     const message = errorText(e);
     // Sin sesión válida el servicio manda a su página de login: se pide entrar.
-    if (message.includes('LOGIN_REQUIRED')) { needsLogin.value = true; session.value = null; }
-    else connectError.value = message;
+    session.value = null;
+    needsLogin.value = message === 'LOGIN_REQUIRED';
+    if (!needsLogin.value) connectError.value = message;
   } finally {
     connecting.value = false;
   }
@@ -204,8 +205,12 @@ async function connect(cookie?: string) {
 const loggingIn = ref(false);
 const loginLoading = ref(false);
 async function openLogin() {
-  try { loginLoading.value = true; await invoke('open_login'); loggingIn.value = true; }
-  catch (e) { loginLoading.value = false; connectError.value = errorText(e); }
+  if (loggingIn.value || connecting.value) return;
+  loggingIn.value = true;
+  loginLoading.value = true;
+  connectError.value = '';
+  try { await invoke('open_login'); }
+  catch (e) { loggingIn.value = false; loginLoading.value = false; connectError.value = errorText(e); }
 }
 async function logout() {
   await invoke('logout').catch(() => {});
@@ -379,7 +384,6 @@ function ago(ts: number) {
 
 // ---------- Arrastrar y soltar ----------
 onMounted(async () => {
-  void connect();
   // La ventana de login avisa sola: carga de página, login completado o cierre.
   try {
     unlisteners.push(
@@ -388,6 +392,7 @@ onMounted(async () => {
       await listen('login-closed', () => { loggingIn.value = false; loginLoading.value = false; }),
     );
   } catch { /* fuera de Tauri */ }
+  void connect();
   try {
     unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
       const p = event.payload;
@@ -438,7 +443,7 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
         <i class="dot" />{{ accountLabel }}
       </span>
       <button v-if="session?.using_account" class="ghost" @click="logout">Cerrar sesión</button>
-      <button v-else-if="session || needsLogin" class="ghost" :disabled="loggingIn" @click="openLogin">Iniciar sesión</button>
+      <button v-else class="ghost" :disabled="connecting || loggingIn" @click="openLogin">Iniciar sesión</button>
     </header>
 
     <section class="sleeve">

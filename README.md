@@ -2,6 +2,10 @@
 
 Wrapper **no oficial** de `https://x-minus.pro/ai`, basado en los HAR capturados el 17 y 18/11/2026 y el catálogo de modelos de `ai.v105.min.js` que venía en ellos. El frontend Vue invoca comandos Rust para abrir una sesión, subir audio, consultar estado y guardar MP3; no depende de CORS ni de ejecutar su interfaz web dentro de Tauri.
 
+## Actualizar en Windows
+
+Cierra la aplicación y abre el nuevo instalador `x64-setup.exe` con el mismo usuario de Windows. Si ya tienes la v0.3.0, el asistente reconoce la instalación y recupera su carpeta. Elige conservar la instalación anterior cuando el asistente te ofrezca desinstalarla primero y continúa con la carpeta que propone.
+
 ## Instalación en macOS
 
 Requiere Node.js, Rust/Cargo (`rustup`) y los prerrequisitos de [Tauri 2](https://v2.tauri.app/start/prerequisites/).
