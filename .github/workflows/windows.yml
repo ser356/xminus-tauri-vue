@@ -64,16 +64,18 @@ jobs:
           $newSetup = Get-Item 'src-tauri/target/release/bundle/nsis/*-setup.exe'
           $upgrade = Start-Process $newSetup.FullName -ArgumentList '/S' -Wait -PassThru
           if ($upgrade.ExitCode -ne 0) { throw 'Falló la actualización' }
-          $expected = Get-FileHash 'src-tauri/target/release/xminus-tauri-vue.exe'
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ((Get-Item $installedExe).VersionInfo.ProductVersion -cne $version) {
+            throw 'El ejecutable en la carpeta original no tiene la versión esperada'
+          }
+          $payload = Join-Path $env:RUNNER_TEMP 'nsis-payload'
+          7z e $newSetup.FullName '-ir!xminus-tauri-vue.exe' "-o$payload" -y
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo extraer el ejecutable del instalador NSIS' }
+          $expected = Get-FileHash (Join-Path $payload 'xminus-tauri-vue.exe')
           if ((Get-FileHash $installedExe).Hash -ne $expected.Hash) {
-            Get-ChildItem $installDir,"$env:LOCALAPPDATA/X-Minus Stems" -Filter '*.exe' -ErrorAction SilentlyContinue |
-              Select-Object FullName,@{Name='Version';Expression={$_.VersionInfo.ProductVersion}} | Format-List
-            Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\X-Minus Stems' |
-              Select-Object DisplayVersion,InstallLocation,UninstallString | Format-List
-            throw 'El ejecutable nuevo no está en la carpeta original'
+            throw 'El ejecutable instalado no coincide con el contenido del instalador'
           }
           $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\X-Minus Stems'
-          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ((Get-ItemPropertyValue $key DisplayVersion) -ne $version) {
             throw 'Windows no registró la nueva versión'
           }
