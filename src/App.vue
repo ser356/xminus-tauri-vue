@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { downloadDir } from '@tauri-apps/api/path';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import catalog from './catalog.json';
@@ -97,6 +98,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let generation = 0;
 let checks = 0;
 let unlistenDrop: (() => void) | undefined;
+const unlisteners: UnlistenFn[] = [];
 
 const goal = computed(() => goals.find((g) => g.id === goalId.value)!);
 const choice = computed(() => goal.value.choices[choiceIndex.value] ?? goal.value.choices[0]);
@@ -161,13 +163,10 @@ async function connect(cookie?: string) {
 
 // ---------- Iniciar sesión (ventana de X-Minus, vale también «Entrar con Google») ----------
 const loggingIn = ref(false);
+const loginLoading = ref(false);
 async function openLogin() {
-  try { await invoke('open_login'); loggingIn.value = true; } catch (e) { connectError.value = errorText(e); }
-}
-async function finishLogin() {
-  await invoke('close_login').catch(() => {});
-  loggingIn.value = false;
-  await connect();
+  try { loginLoading.value = true; await invoke('open_login'); loggingIn.value = true; }
+  catch (e) { loginLoading.value = false; connectError.value = errorText(e); }
 }
 async function logout() {
   await invoke('logout').catch(() => {});
@@ -336,6 +335,14 @@ function ago(ts: number) {
 // ---------- Arrastrar y soltar ----------
 onMounted(async () => {
   void connect();
+  // La ventana de login avisa sola: carga de página, login completado o cierre.
+  try {
+    unlisteners.push(
+      await listen<boolean>('login-loading', (e) => { loginLoading.value = e.payload; }),
+      await listen('login-detected', async () => { loggingIn.value = false; loginLoading.value = false; await connect(); }),
+      await listen('login-closed', () => { loggingIn.value = false; loginLoading.value = false; }),
+    );
+  } catch { /* fuera de Tauri */ }
   try {
     unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
       const p = event.payload;
@@ -351,7 +358,7 @@ onMounted(async () => {
     });
   } catch { /* fuera de Tauri (vista previa en navegador) */ }
 });
-onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); });
+onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u) => u()); });
 </script>
 
 <template>
@@ -375,8 +382,8 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); });
     </div>
 
     <div v-if="loggingIn" class="banner info">
-      <span>Inicia sesión en la ventana que se ha abierto (puedes usar Google). Cuando veas que has entrado, pulsa el botón.</span>
-      <button class="ghost" @click="finishLogin">Ya he entrado</button>
+      <span class="row"><span v-if="loginLoading" class="mini-spin" aria-hidden="true" />
+        {{ loginLoading ? 'Cargando la página de inicio de sesión…' : 'Inicia sesión en la ventana que se ha abierto (puedes usar Google). Se detectará automáticamente.' }}</span>
     </div>
 
     <div v-if="session?.account_expired" class="banner info">

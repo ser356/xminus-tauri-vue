@@ -12,7 +12,8 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{path::{Path, PathBuf}, time::Duration};
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::{webview::PageLoadEvent, AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
 const PAGE: &str = "https://x-minus.pro/ai";
@@ -207,6 +208,62 @@ fn json_string<'a>(json: &'a Value, field: &str) -> Option<&'a str> {
 }
 
 const LOGIN_LABEL: &str = "login";
+static WATCH_ID: AtomicU64 = AtomicU64::new(0);
+
+// Indicador de carga dentro de la propia ventana de login: se pinta nada más
+// empezar la navegación y se quita al terminar de cargar.
+const LOADING_OVERLAY: &str = r#"(function(){
+  if (window.top !== window) return;
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(15,17,23,.82);pointer-events:none;font:600 15px -apple-system,sans-serif;color:#fff;gap:12px';
+  d.innerHTML = '<style>@keyframes xmspin{to{transform:rotate(360deg)}}</style><div style="width:22px;height:22px;border:3px solid #ffffff44;border-top-color:#fff;border-radius:50%;animation:xmspin .8s linear infinite"></div>Cargando…';
+  (document.documentElement || document).appendChild(d);
+  var rm = function(){ d.remove(); };
+  window.addEventListener('load', rm);
+  setTimeout(rm, 20000);
+})();"#;
+
+fn cookie_header(win: &WebviewWindow) -> String {
+    Url::parse("https://x-minus.pro/").ok()
+        .and_then(|u| win.cookies_for_url(u).ok())
+        .map(|cs| {
+            let mut v: Vec<String> = cs.iter().map(|c| format!("{}={}", c.name(), c.value())).collect();
+            v.sort();
+            v.join("; ")
+        })
+        .unwrap_or_default()
+}
+
+/// Vigila en segundo plano la ventana de login y avisa a la interfaz cuando
+/// el usuario termina de entrar (volviendo a x-minus.pro con cookies nuevas).
+fn watch_login(app: AppHandle) {
+    let id = WATCH_ID.fetch_add(1, Ordering::SeqCst) + 1;
+    tauri::async_runtime::spawn(async move {
+        let baseline = app.get_webview_window(LOGIN_LABEL).map(|w| cookie_header(&w)).unwrap_or_default();
+        let baseline_names: Vec<String> = baseline.split("; ")
+            .filter_map(|c| c.split('=').next()).map(str::to_owned).collect();
+        let mut left_site = false;
+        loop {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            if WATCH_ID.load(Ordering::SeqCst) != id { return; }
+            let Some(win) = app.get_webview_window(LOGIN_LABEL) else {
+                let _ = app.emit("login-closed", ());
+                return;
+            };
+            if !win.is_visible().unwrap_or(false) { return; }
+            let on_site = win.url().ok().and_then(|u| u.host_str().map(|h| h == "x-minus.pro")).unwrap_or(false);
+            if !on_site { left_site = true; continue; }
+            let now = cookie_header(&win);
+            let new_names = now.split("; ").filter_map(|c| c.split('=').next())
+                .any(|n| !n.is_empty() && !baseline_names.iter().any(|b| b == n));
+            if (left_site && now != baseline) || new_names {
+                let _ = win.hide();
+                let _ = app.emit("login-detected", ());
+                return;
+            }
+        }
+    });
+}
 
 /// Ventana con la web de X-Minus donde el usuario inicia sesión él mismo
 /// (también con Google). Sus cookies viven en el almacén del propio webview.
@@ -220,6 +277,13 @@ fn login_window(app: &AppHandle, visible: bool) -> Result<WebviewWindow, String>
         .inner_size(480.0, 740.0)
         .visible(visible)
         .on_navigation(|u| u.scheme() == "https")
+        .initialization_script(LOADING_OVERLAY)
+        .on_page_load(|w, p| {
+            // Solo informa a la interfaz mientras la ventana de login está a la vista.
+            if w.is_visible().unwrap_or(false) {
+                let _ = w.app_handle().emit("login-loading", matches!(p.event(), PageLoadEvent::Started));
+            }
+        })
         .build()
         .map_err(|_| "No se pudo abrir la ventana de inicio de sesión".to_string())
 }
@@ -236,11 +300,14 @@ fn login_cookie(app: &AppHandle) -> Option<String> {
 #[tauri::command]
 pub async fn open_login(app: AppHandle) -> Result<(), String> {
     let win = login_window(&app, true)?;
-    win.show().and_then(|_| win.set_focus()).map_err(|_| "No se pudo mostrar la ventana".into())
+    win.show().and_then(|_| win.set_focus()).map_err(|_| "No se pudo mostrar la ventana".to_string())?;
+    watch_login(app);
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn close_login(app: AppHandle) -> Result<(), String> {
+    WATCH_ID.fetch_add(1, Ordering::SeqCst);
     if let Some(win) = app.get_webview_window(LOGIN_LABEL) { let _ = win.hide(); }
     Ok(())
 }
@@ -252,6 +319,7 @@ pub async fn logout(app: AppHandle) -> Result<(), String> {
     let cookies = win.cookies_for_url(Url::parse("https://x-minus.pro/").map_err(|e| e.to_string())?)
         .map_err(|_| "No se pudieron leer las cookies".to_string())?;
     for c in cookies { let _ = win.delete_cookie(c); }
+    WATCH_ID.fetch_add(1, Ordering::SeqCst);
     let _ = win.hide();
     Ok(())
 }
