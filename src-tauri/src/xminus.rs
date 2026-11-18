@@ -350,6 +350,16 @@ fn is_x_minus_host(url: &Url) -> bool {
 }
 
 /// Dominios a los que puede redirigir la página. Solo `x-minus.pro` recibe la cookie.
+/// Código que la interfaz reconoce para pedir al usuario que inicie sesión.
+const LOGIN_REQUIRED: &str = "LOGIN_REQUIRED";
+
+/// X-Minus manda a esta página cuando no hay una sesión válida.
+fn is_login_redirect(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or_default();
+    (host == "uvronline.app" || host.ends_with(".uvronline.app") || is_x_minus_host(url))
+        && url.path().starts_with("/login")
+}
+
 fn trusted_page_url(url: &Url) -> bool {
     let host = url.host_str().unwrap_or_default();
     is_x_minus_host(url) || (url.scheme() == "https" && ["uvronline.app", "uvronline.vip"]
@@ -372,6 +382,9 @@ async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session,
             let location = resp.headers().get(LOCATION).and_then(|v| v.to_str().ok())
                 .ok_or("El servicio redirigió sin indicar adónde.")?;
             let next = url.join(location).map_err(|_| "Redirección no válida".to_string())?;
+            if is_login_redirect(&next) {
+                return Err(LOGIN_REQUIRED.into());
+            }
             if !trusted_page_url(&next) {
                 return Err(format!("El servicio redirigió a un sitio no permitido ({}).",
                     next.host_str().unwrap_or("desconocido")));
@@ -770,6 +783,13 @@ mod tests {
         assert!(trusted_page_url(&Url::parse("https://uvronline.app/ai").unwrap()));
         assert!(!trusted_page_url(&Url::parse("https://uvronline.app.evil.com/ai").unwrap()));
         assert!(!is_x_minus_host(&Url::parse("https://uvronline.app/ai").unwrap()));
+    }
+
+    #[test]
+    fn detects_login_redirect() {
+        assert!(is_login_redirect(&Url::parse("https://uvronline.app/login?ref=x").unwrap()));
+        assert!(!is_login_redirect(&Url::parse("https://uvronline.app/ai").unwrap()));
+        assert!(!is_login_redirect(&Url::parse("https://evil.com/login").unwrap()));
     }
 
     #[test]

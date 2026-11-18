@@ -80,6 +80,7 @@ type Phase = 'pick' | 'uploading' | 'processing' | 'ready' | 'saving' | 'saved' 
 const session = ref<SessionInfo | null>(null);
 const connecting = ref(false);
 const connectError = ref('');
+const needsLogin = ref(false);
 const audioPath = ref('');
 const dragging = ref(false);
 const goalId = ref('vocals');
@@ -153,9 +154,13 @@ async function connect(cookie?: string) {
   connectError.value = '';
   try {
     session.value = await invoke<SessionInfo>('initialize_session', { sessionCookie: cookie || null });
+    needsLogin.value = false;
     if (cookie) manualCookie.value = '';
   } catch (e) {
-    connectError.value = errorText(e);
+    const message = errorText(e);
+    // Sin sesión válida el servicio manda a su página de login: se pide entrar.
+    if (message.includes('LOGIN_REQUIRED')) { needsLogin.value = true; session.value = null; }
+    else connectError.value = message;
   } finally {
     connecting.value = false;
   }
@@ -373,12 +378,17 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
         <i class="dot" />{{ accountLabel }}
       </span>
       <button v-if="session?.using_account" class="ghost" @click="logout">Cerrar sesión</button>
-      <button v-else-if="session" class="ghost" @click="openLogin">Iniciar sesión</button>
+      <button v-else-if="session || needsLogin" class="ghost" :disabled="loggingIn" @click="openLogin">Iniciar sesión</button>
     </header>
 
     <div v-if="connectError" class="banner warn">
       <span>No se ha podido conectar con el servicio. {{ connectError }}</span>
       <button class="link" :disabled="connecting" @click="connect()">Reintentar</button>
+    </div>
+
+    <div v-if="needsLogin && !loggingIn" class="banner info">
+      <span>Para empezar, inicia sesión con tu cuenta de X-Minus (puedes usar Google).</span>
+      <button class="ghost" @click="openLogin">Iniciar sesión</button>
     </div>
 
     <div v-if="loggingIn" class="banner info">
