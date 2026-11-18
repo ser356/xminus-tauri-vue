@@ -12,6 +12,9 @@ pub fn run() {
             xminus::download_stems,
             xminus::restore_job,
             xminus::reveal_file,
+            xminus::open_login,
+            xminus::close_login,
+            xminus::logout,
         ])
         .run(tauri::generate_context!())
         .expect("No se pudo iniciar X-Minus Stems");

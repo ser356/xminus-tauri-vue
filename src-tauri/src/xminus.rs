@@ -12,7 +12,7 @@ use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{path::{Path, PathBuf}, time::Duration};
-use tauri::State;
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
 const PAGE: &str = "https://x-minus.pro/ai";
@@ -206,6 +206,56 @@ fn json_string<'a>(json: &'a Value, field: &str) -> Option<&'a str> {
     json.get(field).and_then(Value::as_str)
 }
 
+const LOGIN_LABEL: &str = "login";
+
+/// Ventana con la web de X-Minus donde el usuario inicia sesión él mismo
+/// (también con Google). Sus cookies viven en el almacén del propio webview.
+fn login_window(app: &AppHandle, visible: bool) -> Result<WebviewWindow, String> {
+    if let Some(win) = app.get_webview_window(LOGIN_LABEL) {
+        return Ok(win);
+    }
+    let url = PAGE.parse().map_err(|_| "URL no válida".to_string())?;
+    WebviewWindowBuilder::new(app, LOGIN_LABEL, WebviewUrl::External(url))
+        .title("Iniciar sesión")
+        .inner_size(480.0, 740.0)
+        .visible(visible)
+        .on_navigation(|u| u.scheme() == "https")
+        .build()
+        .map_err(|_| "No se pudo abrir la ventana de inicio de sesión".to_string())
+}
+
+/// Cookies de x-minus.pro guardadas por la ventana de login (si hay).
+fn login_cookie(app: &AppHandle) -> Option<String> {
+    let win = login_window(app, false).ok()?;
+    let cookies = win.cookies_for_url(Url::parse("https://x-minus.pro/").ok()?).ok()?;
+    let header = cookies.iter().map(|c| format!("{}={}", c.name(), c.value()))
+        .collect::<Vec<_>>().join("; ");
+    (!header.is_empty() && !header.contains(['\r', '\n'])).then_some(header)
+}
+
+#[tauri::command]
+pub async fn open_login(app: AppHandle) -> Result<(), String> {
+    let win = login_window(&app, true)?;
+    win.show().and_then(|_| win.set_focus()).map_err(|_| "No se pudo mostrar la ventana".into())
+}
+
+#[tauri::command]
+pub async fn close_login(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(LOGIN_LABEL) { let _ = win.hide(); }
+    Ok(())
+}
+
+/// Borra las cookies de x-minus.pro del almacén de la app.
+#[tauri::command]
+pub async fn logout(app: AppHandle) -> Result<(), String> {
+    let win = login_window(&app, false)?;
+    let cookies = win.cookies_for_url(Url::parse("https://x-minus.pro/").map_err(|e| e.to_string())?)
+        .map_err(|_| "No se pudieron leer las cookies".to_string())?;
+    for c in cookies { let _ = win.delete_cookie(c); }
+    let _ = win.hide();
+    Ok(())
+}
+
 async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session, String> {
     let mut req = client.get(PAGE).header(ACCEPT, "text/html");
     if let Some(cookie) = cookie {
@@ -223,6 +273,7 @@ async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session,
 
 #[tauri::command]
 pub async fn initialize_session(
+    app: AppHandle,
     state: State<'_, AppState>,
     session_cookie: Option<String>,
 ) -> Result<SessionInfo, String> {
@@ -231,7 +282,7 @@ pub async fn initialize_session(
     if manual.as_deref().is_some_and(|c| c.contains(['\r', '\n'])) {
         return Err("La cookie no es válida".into());
     }
-    let cookie = manual.clone().or_else(embedded_cookie);
+    let cookie = manual.clone().or_else(|| login_cookie(&app)).or_else(embedded_cookie);
     let (session, using_account, account_expired) =
         match fetch_session(&state.http, cookie.as_deref()).await {
             Ok(session) => (session, cookie.is_some(), false),

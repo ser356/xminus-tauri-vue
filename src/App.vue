@@ -159,6 +159,22 @@ async function connect(cookie?: string) {
   }
 }
 
+// ---------- Iniciar sesión (ventana de X-Minus, vale también «Entrar con Google») ----------
+const loggingIn = ref(false);
+async function openLogin() {
+  try { await invoke('open_login'); loggingIn.value = true; } catch (e) { connectError.value = errorText(e); }
+}
+async function finishLogin() {
+  await invoke('close_login').catch(() => {});
+  loggingIn.value = false;
+  await connect();
+}
+async function logout() {
+  await invoke('logout').catch(() => {});
+  loggingIn.value = false;
+  await connect();
+}
+
 // ---------- Elegir canción ----------
 const audioExt = ['mp3', 'wav', 'flac', 'm4a', 'ogg'];
 async function pickFile() {
@@ -349,6 +365,8 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); });
       <span class="account" :class="{ ok: session, premium: session?.is_premium }">
         <i class="dot" />{{ accountLabel }}
       </span>
+      <button v-if="session?.using_account" class="ghost" @click="logout">Cerrar sesión</button>
+      <button v-else-if="session" class="ghost" @click="openLogin">Iniciar sesión</button>
     </header>
 
     <div v-if="connectError" class="banner warn">
@@ -356,8 +374,13 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); });
       <button class="link" :disabled="connecting" @click="connect()">Reintentar</button>
     </div>
 
+    <div v-if="loggingIn" class="banner info">
+      <span>Inicia sesión en la ventana que se ha abierto (puedes usar Google). Cuando veas que has entrado, pulsa el botón.</span>
+      <button class="ghost" @click="finishLogin">Ya he entrado</button>
+    </div>
+
     <div v-if="session?.account_expired" class="banner info">
-      <span>Tu sesión de X-Minus guardada en la app ha caducado, así que estás en modo gratuito. Para volver a usar tu cuenta, pega una cookie nueva en «Ajustes avanzados» o vuelve a compilar la app con ella.</span>
+      <span>Tu sesión de X-Minus guardada en la app ha caducado, así que estás en modo gratuito. Pulsa «Iniciar sesión» para volver a entrar con tu cuenta.</span>
     </div>
 
     <!-- ========== Paso 1 y 2: elegir canción y qué sacar ========== -->
