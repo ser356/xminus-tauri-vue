@@ -11,6 +11,7 @@ pub fn run() {
             xminus::check_status,
             xminus::download_stems,
             xminus::restore_job,
+            xminus::reveal_file,
         ])
         .run(tauri::generate_context!())
         .expect("No se pudo iniciar X-Minus Stems");

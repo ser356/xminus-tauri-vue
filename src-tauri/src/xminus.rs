@@ -87,6 +87,10 @@ fn access_allowed(session: &Session, level: u8) -> bool {
 #[derive(Serialize)]
 pub struct SessionInfo {
     version: String,
+    /// true si la página se abrió con una cookie (manual o embebida) y era válida.
+    using_account: bool,
+    /// true si había cookie incrustada pero el servicio ya no la acepta.
+    account_expired: bool,
     is_premium: bool,
     is_tester: bool,
     is_sng_country: bool,
@@ -117,10 +121,26 @@ pub struct StemResult {
     error: Option<String>,
 }
 
+/// Cookie opcional incrustada al compilar (ver `secrets/README.md`).
+/// Va ofuscada con XOR para que no aparezca en claro en el binario.
+fn embedded_cookie() -> Option<String> {
+    const KEY: &[u8] = b"xminus-stems-embedded";
+    let hex = option_env!("XMINUS_EMBEDDED_COOKIE")?;
+    let bytes: Option<Vec<u8>> = (0..hex.len()).step_by(2).enumerate()
+        .map(|(i, at)| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok()
+            .map(|b| b ^ KEY[i % KEY.len()]))
+        .collect();
+    String::from_utf8(bytes?).ok().filter(|c| !c.is_empty())
+}
+
+fn user_agent() -> &'static str {
+    option_env!("XMINUS_EMBEDDED_USER_AGENT").unwrap_or("XMinusStems/0.4")
+}
+
 impl AppState {
     pub fn new() -> Self {
         let http = Client::builder()
-            .user_agent("XMinusStems/0.1")
+            .user_agent(user_agent())
             .timeout(Duration::from_secs(180))
             // No permitir redirecciones automáticas a dominios desconocidos.
             .redirect(reqwest::redirect::Policy::none())
@@ -144,8 +164,8 @@ fn read_session(html: &str) -> Result<Session, String> {
     let page = Html::parse_document(html);
     let auth_key = input_value(&page, "vocal-cut-auth-key")
         .filter(|v| !v.is_empty())
-        .ok_or("No aparece auth_key en la página. Puede requerir iniciar sesión o haber cambiado la web.")?;
-    let version = page_setting(html, "version").ok_or("Falta la versión del backend en el HTML")?;
+        .ok_or("El servicio ha cambiado o no permite conectarse ahora mismo. Inténtalo más tarde.")?;
+    let version = page_setting(html, "version").ok_or("El servicio ha cambiado y la app no lo reconoce. Puede que necesite una actualización.")?;
     let client_fp = input_value(&page, "vocal-cut-fp").unwrap_or_else(|| "-".into());
     let show_setting_format = page_setting(html, "show_setting_format").unwrap_or_else(|| "0".into());
     Ok(Session {
@@ -173,17 +193,32 @@ fn request_headers() -> HeaderMap {
 
 async fn body_as_json(resp: reqwest::Response) -> Result<Value, String> {
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("Error al recibir respuesta: {e}"))?;
+    let text = resp.text().await.map_err(|_| "Se cortó la conexión con el servicio".to_string())?;
     if !status.is_success() {
         // Evitar mostrar HTML o secretos del proveedor en la interfaz.
-        return Err(format!("El servidor devolvió HTTP {}", status.as_u16()));
+        return Err(format!("El servicio respondió con un error ({}). Inténtalo de nuevo en unos minutos.", status.as_u16()));
     }
     serde_json::from_str(&text)
-        .map_err(|_| "El servidor no devolvió JSON válido (su API puede haber cambiado)".into())
+        .map_err(|_| "El servicio respondió de forma inesperada; puede haber cambiado.".into())
 }
 
 fn json_string<'a>(json: &'a Value, field: &str) -> Option<&'a str> {
     json.get(field).and_then(Value::as_str)
+}
+
+async fn fetch_session(client: &Client, cookie: Option<&str>) -> Result<Session, String> {
+    let mut req = client.get(PAGE).header(ACCEPT, "text/html");
+    if let Some(cookie) = cookie {
+        // Cookie se envía únicamente a x-minus.pro, nunca al servidor CDN.
+        req = req.header(COOKIE, cookie);
+    }
+    let resp = req.send().await
+        .map_err(|_| "No se pudo conectar. Comprueba tu conexión a internet.".to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("El servicio no está disponible ahora mismo (HTTP {}).", resp.status().as_u16()));
+    }
+    let html = resp.text().await.map_err(|e| e.to_string())?;
+    read_session(&html)
 }
 
 #[tauri::command]
@@ -191,22 +226,24 @@ pub async fn initialize_session(
     state: State<'_, AppState>,
     session_cookie: Option<String>,
 ) -> Result<SessionInfo, String> {
-    let mut req = state.http.get(PAGE).header(ACCEPT, "text/html");
-    if let Some(cookie) = session_cookie.as_deref().filter(|v| !v.trim().is_empty()) {
-        if cookie.contains('\r') || cookie.contains('\n') {
-            return Err("Cookie inválida".into());
-        }
-        // Cookie se envía únicamente a x-minus.pro, nunca al servidor CDN.
-        req = req.header(COOKIE, cookie);
+    let manual = session_cookie.map(|c| c.trim().trim_start_matches("Cookie:").trim().to_owned())
+        .filter(|c| !c.is_empty());
+    if manual.as_deref().is_some_and(|c| c.contains(['\r', '\n'])) {
+        return Err("La cookie no es válida".into());
     }
-    let resp = req.send().await.map_err(|e| format!("No se pudo cargar X-Minus: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("No se pudo abrir X-Minus: HTTP {}", resp.status()));
-    }
-    let html = resp.text().await.map_err(|e| e.to_string())?;
-    let session = read_session(&html)?;
+    let cookie = manual.clone().or_else(embedded_cookie);
+    let (session, using_account, account_expired) =
+        match fetch_session(&state.http, cookie.as_deref()).await {
+            Ok(session) => (session, cookie.is_some(), false),
+            // Si la cookie embebida caducó, seguir en modo gratuito sin ella.
+            Err(_) if manual.is_none() && cookie.is_some() =>
+                (fetch_session(&state.http, None).await?, false, true),
+            Err(e) => return Err(e),
+        };
     let info = SessionInfo {
         version: session.version.clone(),
+        using_account,
+        account_expired,
         is_premium: session.is_premium,
         is_tester: session.is_tester,
         is_sng_country: session.is_sng_country,
@@ -215,6 +252,25 @@ pub async fn initialize_session(
     ctx.session = Some(session);
     ctx.job = None;
     Ok(info)
+}
+
+/// Muestra en el explorador de archivos un MP3 que acaba de guardar la app.
+#[tauri::command]
+pub async fn reveal_file(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    let is_mp3 = path.extension().and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("mp3"));
+    if !is_mp3 || !path.is_absolute() || !path.is_file() {
+        return Err("El archivo ya no existe".into());
+    }
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("explorer").arg("/select,").arg(&path).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let result = std::process::Command::new("xdg-open")
+        .arg(path.parent().unwrap_or(Path::new("/"))).spawn();
+    result.map(|_| ()).map_err(|_| "No se pudo abrir la carpeta".into())
 }
 
 fn file_mime(path: &Path) -> &'static str {
@@ -236,19 +292,19 @@ pub async fn start_separation(
     model_id: String,
 ) -> Result<JobInfo, String> {
     let session = state.current.lock().await.session.clone()
-        .ok_or("Primero debes inicializar la sesión")?;
+        .ok_or("Todavía no se ha conectado con el servicio. Espera un momento y vuelve a intentarlo.")?;
     let (separation_type, separation, stems, access_level) = model_config(&preset_id, &model_id)?;
     if !access_allowed(&session, access_level) {
-        return Err("Tu sesión de X-Minus no tiene acceso a ese modelo. Elige otro modelo o usa una cuenta con acceso.".into());
+        return Err("Esta opción necesita una cuenta Premium de X-Minus. Elige otra opción.".into());
     }
     let path = PathBuf::from(&file_path);
     let name = path.file_name().and_then(|x| x.to_str())
         .ok_or("El archivo debe tener un nombre válido")?.to_owned();
-    let metadata = fs::metadata(&path).await.map_err(|e| format!("Archivo no accesible: {e}"))?;
+    let metadata = fs::metadata(&path).await.map_err(|_| "No se puede abrir el archivo. ¿Lo has movido o borrado?".to_string())?;
     if !metadata.is_file() || metadata.len() == 0 {
-        return Err("Selecciona un archivo de audio no vacío".into());
+        return Err("El archivo está vacío o no es un audio".into());
     }
-    let bytes = fs::read(&path).await.map_err(|e| format!("Error leyendo audio: {e}"))?;
+    let bytes = fs::read(&path).await.map_err(|_| "No se pudo leer el archivo de audio".to_string())?;
     let file_part = Part::bytes(bytes)
         .file_name(name)
         .mime_str(file_mime(&path))
@@ -275,17 +331,17 @@ pub async fn start_separation(
         .post(format!("{API}/upload/vocalCutAi?catch-file"))
         .headers(request_headers())
         .multipart(multipart)
-        .send().await.map_err(|e| format!("Error subiendo audio: {e}"))?
+        .send().await.map_err(|_| "No se pudo subir la canción. Comprueba tu conexión.".to_string())?
     ).await?;
 
     let status = json_string(&json, "status").unwrap_or("unknown");
     if status != "accepted" && status != "done" {
         let error = json_string(&json, "err_msg")
             .or_else(|| json_string(&json, "message"))
-            .unwrap_or("El servidor rechazó la separación");
-        return Err(format!("X-Minus: {}", error.chars().take(300).collect::<String>()));
+            .unwrap_or("El servicio no ha aceptado la canción");
+        return Err(format!("{}", error.chars().take(300).collect::<String>()));
     }
-    let job_id = json_string(&json, "job_id").ok_or("Respuesta sin job_id")?.to_owned();
+    let job_id = json_string(&json, "job_id").ok_or("El servicio respondió de forma inesperada. Inténtalo de nuevo.")?.to_owned();
     let source_filename = json_string(&json, "source_filename").unwrap_or("audio").to_owned();
     let job = Job { id: job_id.clone(), stems: stems.clone(), source_filename: source_filename.clone() };
     state.current.lock().await.job = Some(job);
@@ -303,8 +359,8 @@ pub async fn start_separation(
 #[tauri::command]
 pub async fn check_status(state: State<'_, AppState>) -> Result<StatusInfo, String> {
     let ctx = state.current.lock().await;
-    let session = ctx.session.clone().ok_or("No hay una sesión")?;
-    let job = ctx.job.clone().ok_or("Aún no se ha subido un archivo")?;
+    let session = ctx.session.clone().ok_or("No hay conexión con el servicio")?;
+    let job = ctx.job.clone().ok_or("Todavía no se ha subido ninguna canción")?;
     drop(ctx);
 
     let form = Form::new()
@@ -315,7 +371,7 @@ pub async fn check_status(state: State<'_, AppState>) -> Result<StatusInfo, Stri
         .post(format!("{API}/upload/vocalCutAi?check-job-status"))
         .headers(request_headers())
         .multipart(form)
-        .send().await.map_err(|e| format!("Error consultando estado: {e}"))?
+        .send().await.map_err(|_| "Se perdió la conexión mientras se procesaba".to_string())?
     ).await?;
 
     Ok(StatusInfo {
@@ -376,7 +432,7 @@ async fn get_download_response(client: &Client, start: Url) -> Result<reqwest::R
         }
         let resp = client.get(current.clone())
             .header(REFERER, PAGE)
-            .send().await.map_err(|e| format!("Error solicitando descarga: {e}"))?;
+            .send().await.map_err(|_| "No se pudo descargar. Comprueba tu conexión.".to_string())?;
         if resp.status().is_redirection() {
             if hops == MAX_REDIRECTS {
                 return Err(format!("Demasiadas redirecciones en la descarga (máximo {MAX_REDIRECTS})"));
@@ -388,7 +444,7 @@ async fn get_download_response(client: &Client, start: Url) -> Result<reqwest::R
             continue;
         }
         if !resp.status().is_success() {
-            return Err(format!("Descarga fallida: HTTP {}", resp.status().as_u16()));
+            return Err(format!("No se pudo descargar (error {}). Puede que la pista haya caducado.", resp.status().as_u16()));
         }
         return Ok(resp);
     }
@@ -408,7 +464,7 @@ async fn download_one(state: &AppState, job: &Job, dir: &Path, stem: &str) -> Re
     // Impide guardar una página de error HTML como MP3.
     if let Some(content_type) = resp.headers().get(reqwest::header::CONTENT_TYPE) {
         if content_type.to_str().unwrap_or("").contains("text/html") {
-            return Err("El servidor devolvió HTML en vez del audio".into());
+            return Err("El servicio no devolvió un audio. Puede que la pista haya caducado.".into());
         }
     }
 
@@ -427,7 +483,7 @@ async fn download_one(state: &AppState, job: &Job, dir: &Path, stem: &str) -> Re
         part_path = dir.join(format!(".{new_name}.part"));
     }
     let mut output = fs::OpenOptions::new().write(true).create_new(true)
-        .open(&part_path).await.map_err(|e| format!("No se puede guardar stem: {e}"))?;
+        .open(&part_path).await.map_err(|_| "No se puede guardar en esa carpeta".to_string())?;
     let mut stream = resp.bytes_stream();
     let result: Result<(), String> = async {
         let mut total = 0u64;
@@ -460,14 +516,14 @@ pub async fn restore_job(
     model_id: String,
 ) -> Result<JobInfo, String> {
     let session = state.current.lock().await.session.clone()
-        .ok_or("Primero debes inicializar la sesión de X-Minus")?;
+        .ok_or("Todavía no se ha conectado con el servicio")?;
     let (_, _, stems, access_level) = model_config(&preset_id, &model_id)?;
     if !access_allowed(&session, access_level) {
-        return Err("Tu sesión actual no tiene acceso a ese modelo".into());
+        return Err("Esta opción necesita una cuenta Premium de X-Minus".into());
     }
     let job_id = job_id.trim().to_ascii_lowercase();
     if !(40..=64).contains(&job_id.len()) || !job_id.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("El ID de trabajo debe tener entre 40 y 64 caracteres hexadecimales".into());
+        return Err("El código no es válido. Cópialo completo, sin espacios.".into());
     }
     let filename = safe_filename(&source_filename);
     let job = Job { id: job_id.clone(), stems: stems.clone(), source_filename: filename.clone() };
@@ -489,12 +545,12 @@ pub async fn download_stems(
     directory: String,
     requested_stems: Option<Vec<String>>,
 ) -> Result<Vec<StemResult>, String> {
-    let job = state.current.lock().await.job.clone().ok_or("No hay ningún trabajo")?;
+    let job = state.current.lock().await.job.clone().ok_or("No hay ninguna canción separada")?;
     let path = PathBuf::from(directory);
-    if !path.is_dir() { return Err("Selecciona una carpeta existente".into()); }
+    if !path.is_dir() { return Err("Elige una carpeta que exista".into()); }
     let selected = requested_stems.unwrap_or_else(|| job.stems.clone());
     if selected.is_empty() || selected.iter().any(|s| !job.stems.contains(s)) {
-        return Err("La lista de stems solicitada no corresponde al trabajo".into());
+        return Err("Las pistas pedidas no corresponden a esta canción".into());
     }
     let mut results = Vec::new();
     for stem in &selected {
@@ -521,6 +577,11 @@ mod tests {
         let session = read_session(html).unwrap();
         assert_eq!(session.auth_key, "secret-x");
         assert_eq!(session.version, "3-4-0");
+    }
+
+    #[test]
+    fn embedded_cookie_is_absent_or_non_empty() {
+        assert!(embedded_cookie().map_or(true, |c| !c.is_empty() && !c.contains('\n')));
     }
 
     #[test]

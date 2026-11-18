@@ -19,15 +19,22 @@ npm run tauri build
 
 `npm run dev` sirve solo para visualizar la interfaz, sin el backend HTTP.
 
+## Usar tu cuenta: cookie embebida en el binario
+
+Para no tener que pegar nada en la app, guarda la cabecera `Cookie` de tu navegador en `src-tauri/secrets/cookie.txt` (ignorado por git) o expórtala en `XMINUS_COOKIE` antes de compilar. Instrucciones paso a paso en [src-tauri/secrets/README.md](src-tauri/secrets/README.md).
+
+- Se incrusta con un ofuscado XOR: no aparece con `strings`, pero **no es cifrado**. No compartas un binario compilado con tu cookie.
+- Si la cookie caduca, la app sigue funcionando en modo gratuito y muestra un aviso; recompila con una nueva o pégala en «Ajustes avanzados».
+
 ## Flujo de uso
 
-1. Pulsa **Inicializar API**. La app intenta recuperar un `auth_key` temporal de la página actual. Si la web requiere tu sesión, puedes introducir **tu propia** cabecera `Cookie` de ese dominio en el campo opcional. No se conserva en disco ni se envía a la CDN.
-2. Selecciona el audio (MP3, WAV, FLAC, M4A, OGG).
-3. Selecciona el **número de stems**: `2`, `4`, `6` o `Especiales` (1–3 pistas de restauración/coros).
-4. Selecciona un **tipo de separación** y un **modelo**. La interfaz muestra exactamente qué stems devolverá. Se permiten varios modelos para la misma separación.
-5. Pulsa **Separar**. La app sube el audio y consulta el estado cada cinco segundos (máximo 60 consultas por tanda, reanudables).
-6. Cuando X-Minus devuelve `done`, elige la carpeta de destino. Rust descarga cada pista usando el identificador de trabajo original, siguiendo hasta **seis redirecciones seguras** (incluida la etapa `/encode` cuando exista).
-7. Si alguna descarga falla, el botón se convierte en **Reintentar stems pendientes** y no repite las que ya se han guardado.
+1. Al abrir la app se conecta sola (con la cookie embebida si existe).
+2. Arrastra una canción o pulsa para elegirla.
+3. Elige qué quieres separar: voz y música, por instrumentos, un solo instrumento, coros, limpiar el audio o experimentos. La app muestra qué pistas obtendrás y escoge el mejor modelo disponible para tu cuenta.
+4. Pulsa **Separar canción**. Al terminar te pregunta dónde guardar (por defecto, Descargas) y puedes mostrar cada pista en el Finder.
+5. Las últimas canciones quedan en **Separadas recientemente** para volver a descargarlas sin subirlas otra vez.
+
+En **Ajustes avanzados** puedes elegir el modelo de IA exacto, pegar una cookie manualmente o recuperar una separación con su código.
 
 ### Recuperar una separación ya hecha (sin volver a subir el MP3)
 

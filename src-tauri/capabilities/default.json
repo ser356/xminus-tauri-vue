@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Acceso exclusivo al selector de archivos y a los comandos internos",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": ["core:default", "core:path:default", "core:webview:default", "dialog:allow-open"]
 }
