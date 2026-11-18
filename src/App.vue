@@ -5,6 +5,10 @@ import { downloadDir } from '@tauri-apps/api/path';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
+import studioRabbit from './assets/studio.webp';
+import portraitRabbit from './assets/portrait.webp';
+import backRabbit from './assets/back.webp';
+import frontRabbit from './assets/front.webp';
 import catalog from './catalog.json';
 
 // ---------- Tipos que devuelve Rust ----------
@@ -21,14 +25,14 @@ type Choice = { label: string; preset: string; model?: string };
 type Goal = { id: string; icon: string; title: string; text: string; choices: Choice[] };
 
 const goals: Goal[] = [
-  { id: 'vocals', icon: '🎤', title: 'Voz y música', text: 'Separa la voz del acompañamiento. Ideal para karaoke o acapellas.',
+  { id: 'vocals', icon: 'M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0z M5 11v1a7 7 0 0 0 14 0v-1 M12 19v3m-4 0h8', title: 'Voz y música', text: 'Separa la voz del acompañamiento. Ideal para karaoke o acapellas.',
     choices: [{ label: 'Voz y música', preset: 'vocals_music', model: 'mel_roformer_deux_becruily' }] },
-  { id: 'band', icon: '🎛️', title: 'Por instrumentos', text: 'Voz, batería, bajo y el resto, cada uno en su propia pista.',
+  { id: 'band', icon: 'M5 3v6m0 4v8m7-18v11m0 4v3m7-18v3m0 4v11 M2 9h6v4H2z M9 14h6v4H9z M16 6h6v4h-6z', title: 'Por instrumentos', text: 'Voz, batería, bajo y el resto, cada uno en su propia pista.',
     choices: [
       { label: '4 pistas', preset: 'splitter_4', model: 'htdemucs' },
       { label: '6 pistas (+ guitarra y piano)', preset: 'splitter_6' },
     ] },
-  { id: 'single', icon: '🎸', title: 'Un solo instrumento', text: 'Saca un instrumento concreto y deja el resto de la música aparte.',
+  { id: 'single', icon: 'M9 17V6l11-3v11 M9 9l11-3 M9 17a3 2.5 0 1 1-6 0 3 2.5 0 1 1 6 0 M20 14a3 2.5 0 1 1-6 0 3 2.5 0 1 1 6 0', title: 'Un solo instrumento', text: 'Saca un instrumento concreto y deja el resto de la música aparte.',
     choices: [
       { label: 'Batería', preset: 'drums_other', model: 'htdemucs' },
       { label: 'Bajo', preset: 'bass_other', model: 'htdemucs' },
@@ -38,19 +42,19 @@ const goals: Goal[] = [
       { label: 'Cuerdas', preset: 'strings_other' },
       { label: 'Piezas de la batería', preset: 'splitter_4', model: 'htdemucs_drumsep' },
     ] },
-  { id: 'choirs', icon: '👥', title: 'Voz principal y coros', text: 'Distingue al cantante principal de las voces de fondo.',
+  { id: 'choirs', icon: 'M2 19v-2a5 5 0 0 1 10 0v2 M10 7a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M15 5a3 3 0 1 1 0 6m0 2a6 6 0 0 1 7 6', title: 'Voz principal y coros', text: 'Distingue al cantante principal de las voces de fondo.',
     choices: [
       { label: 'Voz principal, coros y música', preset: 'bv_other', model: 'mel_roformer_lv_bv_chain1' },
       { label: 'Karaoke que conserva los coros', preset: 'lv_other' },
     ] },
-  { id: 'clean', icon: '✨', title: 'Limpiar el audio', text: 'Quita reverberación, eco, ruido o el sonido del público.',
+  { id: 'clean', icon: 'M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z', title: 'Limpiar el audio', text: 'Quita reverberación, eco, ruido o el sonido del público.',
     choices: [
       { label: 'Quitar reverberación', preset: 'dereverb' },
       { label: 'Quitar eco', preset: 'deecho' },
       { label: 'Quitar ruido', preset: 'denoise' },
       { label: 'Quitar público', preset: 'decrowd' },
     ] },
-  { id: 'lab', icon: '🧪', title: 'Experimentos', text: 'Funciones en pruebas: voces de hombre y mujer, o el centro de la mezcla.',
+  { id: 'lab', icon: 'M9 3h6m-5 0v7L4 20q-.5 1 1 1h14q1.5 0 1-1l-6-10V3 M7 16h10', title: 'Experimentos', text: 'Funciones en pruebas: voces de hombre y mujer, o el centro de la mezcla.',
     choices: [
       { label: 'Voz de hombre y de mujer', preset: 'experimental', model: 'bs_roformer_mf' },
       { label: 'Extraer el centro', preset: 'experimental', model: 'similarity_m23c' },
@@ -65,7 +69,7 @@ const stemInfo: Record<string, [string, string]> = {
   male: ['🙋‍♂️', 'Voz de hombre'], female: ['🙋‍♀️', 'Voz de mujer'], enhanced: ['✨', 'Audio mejorado'],
   similarity: ['🎯', 'Centro de la mezcla'],
 };
-function stemIcon(stem: string) { return stemInfo[stem]?.[0] ?? '🎵'; }
+
 function stemName(stem: string, all: string[] = []) {
   // «inst» es el instrumental si hay voz; si no, es «lo demás».
   if (stem === 'inst' && !all.includes('vocal') && all.length > 0) return 'Resto de la música';
@@ -129,6 +133,38 @@ const fileName = computed(() => audioPath.value.split(/[\\/]/).pop() ?? '');
 const canStart = computed(() => !!session.value && !!audioPath.value && !!model.value && !needsPremium.value && phase.value === 'pick');
 const pending = computed(() => job.value?.stems.filter((s) => !outputs.value.some((o) => o.stem === s && o.path)) ?? []);
 const failedSome = computed(() => outputs.value.some((o) => !o.path));
+
+const rabbitPose = computed(() => {
+  if (phase.value === 'pick') return audioPath.value ? portraitRabbit : studioRabbit;
+  return ['uploading', 'processing', 'slow'].includes(phase.value) ? backRabbit : frontRabbit;
+});
+
+const rabbitPhotos = [backRabbit, frontRabbit, portraitRabbit, studioRabbit];
+const photoStrip = computed(() => rabbitPhotos
+  .filter(photo => photo !== rabbitPose.value));
+const motionPaused = ref(false);
+
+const showRabbitRain = ref(false);
+const fallingCutouts = Array.from({ length: 24 }, (_, index) => ({
+  photo: rabbitPhotos[index % rabbitPhotos.length],
+  style: {
+    left: `${(index * 37 + 2) % 98}%`,
+    width: `${32 + (index * 13) % 35}px`,
+    animationDelay: `${index * 65}ms`,
+    animationDuration: `${2400 + (index * 173) % 760}ms`,
+    '--drift': `${(index * 31) % 99 - 49}px`,
+    '--turn': `${(index * 57) % 270 - 135}deg`,
+  },
+}));
+
+function toggleMotion() {
+  motionPaused.value = !motionPaused.value;
+  if (motionPaused.value) showRabbitRain.value = false;
+}
+
+function celebrateReady() {
+  showRabbitRain.value = !motionPaused.value && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 const accountLabel = computed(() => {
   if (connecting.value) return 'Conectando…';
@@ -216,7 +252,12 @@ async function poll(token: number) {
     const st = await invoke<StatusInfo>('check_status');
     if (token !== generation) return;
     remaining.value = st.remaining_time;
-    if (st.status === 'done') { phase.value = 'ready'; void save(); return; }
+    if (st.status === 'done') {
+      phase.value = 'ready';
+      celebrateReady();
+      void save();
+      return;
+    }
     if (['failed', 'error', 'rejected'].includes(st.status)) {
       fail(st.error || 'No se ha podido separar esta canción. Prueba con otra opción o con otro archivo.');
       return;
@@ -287,6 +328,7 @@ async function reveal(path: string) {
 }
 
 function reset() {
+  showRabbitRain.value = false;
   stopPolling();
   job.value = null;
   outputs.value = [];
@@ -365,19 +407,70 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
 </script>
 
 <template>
-  <main class="app" :class="{ dragging }">
+  <main class="app" :class="{ dragging, still: motionPaused }">
+    <div class="dedication" aria-hidden="true">
+      <svg width="100%" height="100%" focusable="false">
+        <defs>
+          <pattern id="dedication-print" width="200" height="90" patternUnits="userSpaceOnUse">
+            <g fill="currentColor" font-family="Georgia, serif" font-size="23" font-weight="bold" font-style="italic">
+              <text id="dedication-line" x="8" y="30" transform="rotate(-4 8 30)">noelia te amo</text>
+              <g transform="translate(100 45)">
+                <use href="#dedication-line" x="-200"/>
+                <use href="#dedication-line"/>
+              </g>
+            </g>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#dedication-print)"/>
+      </svg>
+    </div>
     <header class="header">
-      <div class="logo" aria-hidden="true"><span /><span /><span /><span /></div>
-      <div class="brand">
-        <h1>Separador de pistas</h1>
-        <p>Divide cualquier canción en voz, batería, bajo y más</p>
-      </div>
+      <img class="logo" src="../src-tauri/icons/128x128.png" width="38" height="38" alt="" />
+      <div class="brand">cinna <span>tube</span></div>
+      <button class="motion-switch" type="button" aria-label="Pausar animaciones" :aria-pressed="motionPaused"
+        :title="motionPaused ? 'Reanudar animaciones' : 'Pausar animaciones'" @click="toggleMotion">
+        <svg aria-hidden="true" viewBox="0 0 18 18" fill="currentColor">
+          <path v-if="motionPaused" d="M5 3l10 6-10 6z"/>
+          <path v-else d="M4 3h4v12H4zm7 0h4v12h-4z"/>
+        </svg>
+      </button>
       <span class="account" :class="{ ok: session, premium: session?.is_premium }">
         <i class="dot" />{{ accountLabel }}
       </span>
       <button v-if="session?.using_account" class="ghost" @click="logout">Cerrar sesión</button>
       <button v-else-if="session || needsLogin" class="ghost" :disabled="loggingIn" @click="openLogin">Iniciar sesión</button>
     </header>
+
+    <section class="sleeve">
+      <div class="sleeve-copy">
+        <h1><span>Separador</span><br><em>de pistas</em></h1>
+        <p>Divide tu canción en voz, instrumentos y pistas independientes.</p>
+      </div>
+      <div class="art" aria-hidden="true">
+        <svg class="sky" viewBox="0 0 420 220" preserveAspectRatio="xMidYMax slice" focusable="false">
+          <defs>
+            <pattern id="print-dots" width="5" height="5" patternUnits="userSpaceOnUse">
+              <circle cx="2" cy="2" r=".95" fill="#28453b"/>
+            </pattern>
+          </defs>
+          <g class="clouds" fill="#fffdf3" stroke="#332d41" stroke-width="1.4">
+            <path d="M19 60q-2-13 10-15 4-21 24-14 10 3 12 15 14-2 17 14z"/>
+            <path d="M321 81q-1-10 9-13 5-17 20-12 8 2 10 12 12-2 15 13z"/>
+          </g>
+          <g class="sun"><circle cx="293" cy="42" r="23" fill="#ffcb53"/>
+            <path d="M293 8V3m0 78v-5m34-34h6m-80 0h6m58-23 4-4m-55 55 4-4m46 0 4 4m-54-55 4 4" fill="none" stroke="#efa035" stroke-width="4" stroke-linecap="round"/></g>
+          <path d="M-20 206Q74 116 172 166T440 127v112H-20z" fill="#8acfa1"/>
+          <path d="M-20 204q121-54 237-6t223-14v55H-20z" fill="#5ab793"/>
+          <path d="M-20 204q121-54 237-6t223-14v55H-20z" fill="url(#print-dots)" opacity=".55"/>
+          <g class="melody" fill="#5b4594"><path d="m80 96 15-4v21a5 4 0 1 1-3-4V97l-9 2v17a5 4 0 1 1-3-4z"/></g>
+          <g fill="#fff0a4"><circle cx="69" cy="201" r="3"/><circle cx="328" cy="186" r="3"/><circle cx="339" cy="182" r="2"/></g>
+        </svg>
+        <img :key="rabbitPose" :src="rabbitPose" alt="" />
+      </div>
+      <div class="contact-sheet" aria-hidden="true">
+        <span v-for="photo in photoStrip" :key="photo"><img :src="photo" alt="" /></span>
+      </div>
+    </section>
 
     <div v-if="connectError" class="banner warn">
       <span>No se ha podido conectar con el servicio. {{ connectError }}</span>
@@ -403,53 +496,47 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
       <section class="card">
         <h2><span class="num">1</span>Elige una canción</h2>
         <button class="drop" :class="{ has: audioPath }" @click="pickFile">
-          <template v-if="audioPath">
-            <span class="drop-icon">🎵</span>
-            <span class="drop-main">{{ fileName }}</span>
-            <span class="drop-sub">Pulsa para cambiarla</span>
-          </template>
-          <template v-else>
-            <span class="drop-icon">📂</span>
-            <span class="drop-main">Arrastra aquí tu canción o pulsa para buscarla</span>
-            <span class="drop-sub">MP3, WAV, FLAC, M4A u OGG</span>
-          </template>
+          <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5" /></svg>
+          <span class="drop-copy"><strong class="drop-main">{{ audioPath ? fileName : 'Arrastra aquí tu canción' }}</strong>
+            <span class="drop-sub">MP3, WAV, FLAC, M4A u OGG</span></span>
+          <span class="browse">{{ audioPath ? 'Cambiar archivo' : 'Elegir archivo' }}</span>
         </button>
       </section>
 
       <section class="card">
         <h2><span class="num">2</span>¿Qué quieres separar?</h2>
         <div class="goals">
-          <button v-for="g in goals" :key="g.id" class="goal" :class="{ active: goalId === g.id }" @click="selectGoal(g.id)">
-            <span class="goal-icon">{{ g.icon }}</span>
+          <button v-for="g in goals" :key="g.id" class="goal" :aria-pressed="goalId === g.id" :class="{ active: goalId === g.id }" @click="selectGoal(g.id)">
+            <svg class="goal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="g.icon" /></svg>
             <span class="goal-title">{{ g.title }}</span>
             <span class="goal-text">{{ g.text }}</span>
           </button>
         </div>
 
         <div v-if="goal.choices.length > 1" class="chips">
-          <button v-for="(c, i) in goal.choices" :key="c.label" class="chip" :class="{ active: choiceIndex === i }" @click="selectChoice(i)">
+          <button v-for="(c, i) in goal.choices" :key="c.label" class="chip" :aria-pressed="choiceIndex === i" :class="{ active: choiceIndex === i }" @click="selectChoice(i)">
             {{ c.label }}<span v-if="choiceNeedsPremium(c)" class="tag">Premium</span>
           </button>
         </div>
 
         <div class="preview">
-          <span class="preview-title">Vas a obtener {{ stems.length === 1 ? '1 pista' : `${stems.length} pistas` }}:</span>
-          <div class="tracks">
-            <span v-for="s in stems" :key="s" class="track"><span>{{ stemIcon(s) }}</span>{{ stemName(s, stems) }}</span>
+          <span class="preview-title">Salida · {{ stems.length === 1 ? '1 pista' : `${stems.length} pistas` }}</span>
+          <div :key="[goalId, choiceIndex, model?.id].join('-')" class="tracks">
+            <span v-for="s in stems" :key="s" class="track"><i class="track-dot" aria-hidden="true" />{{ stemName(s, stems) }}</span>
           </div>
         </div>
 
         <p v-if="needsPremium" class="banner info">
           Esta opción es de pago. Si tienes cuenta Premium, pulsa «Iniciar sesión» arriba a la derecha.
         </p>
-        <p v-else-if="model?.heavy" class="note">⏳ Esta opción da muy buen resultado pero tarda algo más.</p>
-        <p v-else-if="model?.is_test" class="note">🧪 Opción experimental: puede que no funcione siempre.</p>
+        <p v-else-if="model?.heavy" class="note">Esta opción da muy buen resultado pero tarda algo más.</p>
+        <p v-else-if="model?.is_test" class="note">Opción experimental: puede que no funcione siempre.</p>
       </section>
 
       <p v-if="error" class="banner error" role="alert">{{ error }}</p>
 
       <button class="cta" :disabled="!canStart" @click="start">
-        {{ !session ? 'Conectando…' : !audioPath ? 'Elige primero una canción' : needsPremium ? 'Necesita Premium' : 'Separar canción' }}
+        {{ connecting ? 'Conectando…' : !session ? 'Conexión necesaria' : !audioPath ? 'Elige primero una canción' : needsPremium ? 'Necesita Premium' : 'Separar canción' }}
       </button>
 
       <!-- Canciones ya separadas -->
@@ -513,20 +600,20 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
           <button class="ghost" @click="reset">Cancelar</button>
         </div>
       </template>
-      <p v-if="job" class="muted small song">🎵 {{ job.source_filename }}</p>
+      <p v-if="job" class="muted small song">{{ job.source_filename }}</p>
     </section>
 
     <!-- ========== Resultado ========== -->
     <section v-else class="card status">
-      <div class="done-icon">{{ phase === 'saved' ? '🎉' : '✅' }}</div>
+
       <h2 v-if="phase === 'saved'">¡Listo! Tus pistas están guardadas</h2>
       <h2 v-else-if="phase === 'saving'">Guardando las pistas…</h2>
       <h2 v-else>Tu canción ya está separada</h2>
-      <p v-if="job" class="muted song">🎵 {{ job.source_filename }}</p>
+      <p v-if="job" class="muted song">{{ job.source_filename }}</p>
 
       <ul v-if="job" class="results">
         <li v-for="s in job.stems" :key="s">
-          <span class="r-icon">{{ stemIcon(s) }}</span>
+          <i class="track-dot" aria-hidden="true" />
           <span class="r-name">{{ stemName(s, job.stems) }}</span>
           <template v-for="o in outputs.filter((x) => x.stem === s)" :key="o.stem">
             <button v-if="o.path" class="ghost" @click="reveal(o.path)">Mostrar</button>
@@ -553,8 +640,12 @@ onBeforeUnmount(() => { stopPolling(); unlistenDrop?.(); unlisteners.forEach((u)
       </details>
     </section>
 
-    <div v-if="dragging" class="drop-overlay"><span>Suelta la canción aquí 🎵</span></div>
+    <div v-if="showRabbitRain" class="rabbit-rain" aria-hidden="true">
+      <img v-for="(piece, index) in fallingCutouts" :key="index" :src="piece.photo" :style="piece.style" alt="" />
+    </div>
 
-    <footer>Funciona con el servicio de X-Minus. App no oficial.</footer>
+    <div v-if="dragging" class="drop-overlay"><span>Suelta la canción aquí</span></div>
+
+    <footer>cinna 2026</footer>
   </main>
 </template>

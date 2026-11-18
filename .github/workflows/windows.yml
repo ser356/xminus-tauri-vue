@@ -1,0 +1,36 @@
+name: Compilar para Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Preparar Rust para Windows x64
+        run: rustup default stable-x86_64-pc-windows-msvc
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar la aplicación y el instalador NSIS
+        run: npm run tauri -- build --bundles nsis -- --locked
+
+      - name: Guardar el instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: xminus-windows-x64
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

@@ -17,3 +17,6 @@ src-tauri/target/
 # Cookie embebida en el binario (nunca al repositorio)
 src-tauri/secrets/*
 !src-tauri/secrets/README.md
+
+# Iconos de la aplicación usados al compilar desde un clon limpio
+!/src-tauri/icons/
